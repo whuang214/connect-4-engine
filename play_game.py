@@ -1,6 +1,7 @@
 from engine import Connect4
 from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
+from agents.rule_based_agent import RuleBasedAgent
 
 
 
@@ -34,7 +35,7 @@ def play_game(agent1, agent2, render=True):
 
 
 if __name__ == "__main__":
-    agent1 = HumanAgent("HumanAgent")
+    agent1 = RuleBasedAgent("RuleBasedAgent")
     agent2 = RandomAgent("RandomAgent")
 
     play_game(agent1, agent2)
