@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 @dataclass
 class MoveResult:
     row: int
-    col: int    
+    col: int
     player: int
     winner: Optional[int]
     done: bool
