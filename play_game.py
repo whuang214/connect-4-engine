@@ -2,6 +2,8 @@ from engine import Connect4
 from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
+from agents.mcts_agent import MCTSAgent
+from agents.rl_agent import RLAgent
 
 
 
@@ -35,7 +37,7 @@ def play_game(agent1, agent2, render=True):
 
 
 if __name__ == "__main__":
-    agent1 = RuleBasedAgent("RuleBasedAgent")
-    agent2 = RandomAgent("RandomAgent")
+    agent1 = RLAgent("RLAI", model_path="models/rl_agent.pth")
+    agent2 = MCTSAgent("MCTSAI", iterations=500)
 
     play_game(agent1, agent2)
