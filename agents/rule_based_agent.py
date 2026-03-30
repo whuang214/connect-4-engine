@@ -4,6 +4,15 @@ from agents.base_agent import BaseAgent
 class RuleBasedAgent(BaseAgent):
     def __init__(self, name="RuleBasedAgent"):
         super().__init__(name)
+        self.reset_stats()
+
+    def reset_stats(self) -> None:
+        self.moves_chosen = 0
+        self.rule1_immediate_win = 0
+        self.rule2_immediate_block = 0
+        self.rule3_center = 0
+        self.rule4_center_preference = 0
+        self.fallback_count = 0
 
     def choose_action(self, game) -> int:
         legal_moves = game.get_legal_moves()
@@ -19,6 +28,8 @@ class RuleBasedAgent(BaseAgent):
             temp_game = game.clone()
             result = temp_game.make_move(move)
             if result.winner == my_player:
+                self.moves_chosen += 1
+                self.rule1_immediate_win += 1
                 return move
 
         # Rule 2: If opponent can win next move, block it.
@@ -27,11 +38,15 @@ class RuleBasedAgent(BaseAgent):
             temp_game.current_player = opponent
             result = temp_game.make_move(move)
             if result.winner == opponent:
+                self.moves_chosen += 1
+                self.rule2_immediate_block += 1
                 return move
 
         # Rule 3: Prefer center column if available.
         center_col = game.COLS // 2
         if center_col in legal_moves:
+            self.moves_chosen += 1
+            self.rule3_center += 1
             return center_col
 
         # Rule 4: Prefer columns closer to center.
@@ -39,9 +54,13 @@ class RuleBasedAgent(BaseAgent):
 
         for move in preferred_order:
             if move in legal_moves:
+                self.moves_chosen += 1
+                self.rule4_center_preference += 1
                 return move
 
-        # Fallback (should almost never matter)
+        # Fallback
+        self.moves_chosen += 1
+        self.fallback_count += 1
         return legal_moves[0]
 
     def get_center_preferred_order(self, cols: int) -> list[int]:
@@ -62,3 +81,17 @@ class RuleBasedAgent(BaseAgent):
                 order.append(right)
 
         return order
+
+    def get_stats(self) -> dict:
+        return {
+            "Decisions": {
+                "Moves chosen": self.moves_chosen,
+            },
+            "Rule Usage": {
+                "Rule 1 immediate wins": self.rule1_immediate_win,
+                "Rule 2 immediate blocks": self.rule2_immediate_block,
+                "Rule 3 center plays": self.rule3_center,
+                "Rule 4 center-preference plays": self.rule4_center_preference,
+                "Fallback plays": self.fallback_count,
+            }
+        }
