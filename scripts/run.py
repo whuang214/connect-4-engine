@@ -45,11 +45,11 @@ def create_agent(
         return MCTSAgent(name=name, iterations=iterations) if name else MCTSAgent(iterations=iterations)
 
     if agent_type == "rl":
-        raise NotImplementedError("RL agent is not wired into scripts/run.py yet.")
+        raise NotImplementedError("RL agent not wired yet.")
 
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
-        f"Use one of: human, random, rule, mcts, mcts-<iterations>, rl"
+        f"Use: human, random, rule, mcts, mcts-<iterations>, rl"
     )
 
 
@@ -88,18 +88,8 @@ def play_game(agent1, agent2, render: bool = True):
 
 
 def run_play_mode(args):
-    agent1 = create_agent(
-        agent_type=args.agent1,
-        name=args.name1,
-        iterations=args.iterations1,
-        model_path=args.model1,
-    )
-    agent2 = create_agent(
-        agent_type=args.agent2,
-        name=args.name2,
-        iterations=args.iterations2,
-        model_path=args.model2,
-    )
+    agent1 = create_agent(args.agent1, args.name1, args.iterations1, args.model1)
+    agent2 = create_agent(args.agent2, args.name2, args.iterations2, args.model2)
 
     print_run_header(
         mode="CLI Play",
@@ -112,23 +102,16 @@ def run_play_mode(args):
 
 
 def run_ui_mode(args):
-    from ui.game_ui import GameUI
+    from ui.game_ui import GameUI  # ✅ lazy import fixes pygame issue
 
     parsed_agent1_type, _ = parse_agent_config(args.agent1, args.iterations1)
     parsed_agent2_type, _ = parse_agent_config(args.agent2, args.iterations2)
 
     agent1 = None if parsed_agent1_type == "human" else create_agent(
-        agent_type=args.agent1,
-        name=args.name1,
-        iterations=args.iterations1,
-        model_path=args.model1,
+        args.agent1, args.name1, args.iterations1, args.model1
     )
-
     agent2 = None if parsed_agent2_type == "human" else create_agent(
-        agent_type=args.agent2,
-        name=args.name2,
-        iterations=args.iterations2,
-        model_path=args.model2,
+        args.agent2, args.name2, args.iterations2, args.model2
     )
 
     p1_name = "Human" if agent1 is None else agent1.name
@@ -144,24 +127,14 @@ def run_ui_mode(args):
 
 
 def run_eval_mode(args):
-    agent1 = create_agent(
-        agent_type=args.agent1,
-        name=args.name1,
-        iterations=args.iterations1,
-        model_path=args.model1,
-    )
-    agent2 = create_agent(
-        agent_type=args.agent2,
-        name=args.name2,
-        iterations=args.iterations2,
-        model_path=args.model2,
-    )
+    agent1 = create_agent(args.agent1, args.name1, args.iterations1, args.model1)
+    agent2 = create_agent(args.agent2, args.name2, args.iterations2, args.model2)
 
     print_run_header(
         mode="Evaluation",
         agent1=agent1,
         agent2=agent2,
-        extra=f"Games: {args.games} | Render: {args.render}",
+        extra=f"Games: {args.games} | Render: {args.render} | PrintEachGame: {not args.no_print_each_game}",
     )
 
     summary = evaluate_agents(
@@ -170,75 +143,58 @@ def run_eval_mode(args):
         agent2=agent2,
         num_games=args.games,
         render=args.render,
-        print_each_game=args.print_each_game,
+        print_each_game=not args.no_print_each_game,
         print_moves=args.print_moves,
     )
 
     print_evaluation_summary(summary)
 
     if hasattr(agent1, "print_stats"):
-        print()
-        print(f"{agent1.name} stats:")
+        print(f"\n{agent1.name} stats:")
         agent1.print_stats()
 
     if hasattr(agent2, "print_stats"):
-        print()
-        print(f"{agent2.name} stats:")
+        print(f"\n{agent2.name} stats:")
         agent2.print_stats()
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Connect 4 runner: play CLI games, launch UI, or evaluate agents."
+        description="Connect 4 runner: CLI, UI, or evaluation."
     )
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
     def add_agent_args(subparser):
-        subparser.add_argument(
-            "--agent1",
-            type=str,
-            default="human",
-            help="Agent for player 1: human, random, rule, mcts, mcts-5000, rl",
-        )
-        subparser.add_argument(
-            "--agent2",
-            type=str,
-            default="mcts",
-            help="Agent for player 2: human, random, rule, mcts, mcts-5000, rl",
-        )
+        subparser.add_argument("--agent1", type=str, default="human")
+        subparser.add_argument("--agent2", type=str, default="mcts")
 
         subparser.add_argument("--name1", type=str, default=None)
         subparser.add_argument("--name2", type=str, default=None)
 
-        subparser.add_argument(
-            "--iterations1",
-            type=int,
-            default=1000,
-            help="MCTS iterations for player 1 if using plain 'mcts'",
-        )
-        subparser.add_argument(
-            "--iterations2",
-            type=int,
-            default=1000,
-            help="MCTS iterations for player 2 if using plain 'mcts'",
-        )
+        subparser.add_argument("--iterations1", type=int, default=1000)
+        subparser.add_argument("--iterations2", type=int, default=1000)
 
         subparser.add_argument("--model1", type=str, default=None)
         subparser.add_argument("--model2", type=str, default=None)
 
-    play_parser = subparsers.add_parser("play", help="Play a terminal/CLI game")
+    # CLI
+    play_parser = subparsers.add_parser("play")
     add_agent_args(play_parser)
     play_parser.add_argument("--no-render", action="store_true")
 
-    ui_parser = subparsers.add_parser("ui", help="Launch graphical UI")
+    # UI
+    ui_parser = subparsers.add_parser("ui")
     add_agent_args(ui_parser)
 
-    eval_parser = subparsers.add_parser("eval", help="Run evaluation matches")
+    # EVAL
+    eval_parser = subparsers.add_parser("eval")
     add_agent_args(eval_parser)
     eval_parser.add_argument("--games", type=int, default=10)
     eval_parser.add_argument("--render", action="store_true")
-    eval_parser.add_argument("--print-each-game", action="store_true")
+
+    # 🔥 defaults ON → so we use "disable flag"
+    eval_parser.add_argument("--no-print-each-game", action="store_true")
     eval_parser.add_argument("--print-moves", action="store_true")
 
     return parser
