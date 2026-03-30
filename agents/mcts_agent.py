@@ -74,6 +74,7 @@ class MCTSAgent(BaseAgent):
 		super().__init__(name)
 		self.iterations = iterations
 		self.exploration_weight = exploration_weight
+		self.center_order = [3, 2, 4, 1, 5, 0, 6]
 
 	def choose_action(self, game) -> int:
 		legal_moves = game.get_legal_moves()
@@ -84,6 +85,19 @@ class MCTSAgent(BaseAgent):
 		# If only one move exists, just play it
 		if len(legal_moves) == 1:
 			return legal_moves[0]
+
+		current_player = game.current_player
+		opponent = self.get_opponent(current_player)
+
+		# 1. Immediate winning move
+		winning_move = self.find_immediate_win(game, current_player)
+		if winning_move is not None:
+			return winning_move
+
+		# 2. Immediate block if opponent can win next turn
+		block_move = self.find_immediate_win(game, opponent)
+		if block_move is not None:
+			return block_move
 
 		root_player = game.current_player
 		root = MCTSNode(game=game.clone())
@@ -111,15 +125,33 @@ class MCTSAgent(BaseAgent):
 
 	def rollout(self, game, root_player) -> float:
 		"""
-		Play random moves until terminal state.
+		Play semi-smart moves until terminal state.
 		Return result from the root player's perspective:
 			win  -> 1.0
 			draw -> 0.5
 			loss -> 0.0
 		"""
 		while not game.is_terminal():
+			current_player = game.current_player
+			opponent = self.get_opponent(current_player)
 			legal_moves = game.get_legal_moves()
-			move = random.choice(legal_moves)
+
+			# 1. If current player can win now, do it
+			move = self.find_immediate_win(game, current_player)
+			if move is not None:
+				game.make_move(move)
+				continue
+
+			# 2. If opponent can win next turn, block it
+			move = self.find_immediate_win(game, opponent)
+			if move is not None and move in legal_moves:
+				game.make_move(move)
+				continue
+
+			# 3. Prefer center columns if available
+			center_moves = [m for m in self.center_order if m in legal_moves]
+			move = random.choice(center_moves[:3]) if len(center_moves) >= 3 else random.choice(center_moves)
+
 			game.make_move(move)
 
 		if game.winner is None:
@@ -128,3 +160,26 @@ class MCTSAgent(BaseAgent):
 			return 1.0
 		else:
 			return 0.0
+
+	def find_immediate_win(self, game, player):
+		"""
+		Return a move that lets 'player' win immediately, if one exists.
+		Otherwise return None.
+		"""
+		for move in self.center_order:
+			if move not in game.get_legal_moves():
+				continue
+
+			test_game = game.clone()
+
+			# Make sure the right player is making the move in the clone
+			test_game.current_player = player
+			test_game.make_move(move)
+
+			if test_game.winner == player:
+				return move
+
+		return None
+
+	def get_opponent(self, player):
+		return 2 if player == 1 else 1

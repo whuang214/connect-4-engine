@@ -37,7 +37,7 @@ def play_game(agent1, agent2, render=True):
 
 
 if __name__ == "__main__":
-    agent1 = RLAgent("RLAI", model_path="models/rl_agent.pth")
-    agent2 = MCTSAgent("MCTSAI", iterations=500)
+    mcts_agent = MCTSAgent("MCTSAI", iterations=10000)
+    human_agent = HumanAgent("Human")
 
-    play_game(agent1, agent2)
+    play_game(mcts_agent, human_agent)
