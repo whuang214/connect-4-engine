@@ -371,10 +371,11 @@ def print_evaluation_summary(summary: EvaluationSummary) -> None:
     print("\nTiming:")
     print(f"  Average game duration: {summary.avg_game_duration:.4f}s")
     print(f"  {summary.agent1_name} total moves: {summary.total_moves_agent1}")
-    print(f"  {summary.agent2_name} total moves: {summary.total_moves_agent2}")
     print(f"  {summary.agent1_name} avg move time: {summary.avg_move_time_agent1:.6f}s")
-    print(f"  {summary.agent2_name} avg move time: {summary.avg_move_time_agent2:.6f}s")
     print(f"  {summary.agent1_name} total move time: {summary.total_move_time_agent1:.4f}s")
+    print("")
+    print(f"  {summary.agent2_name} total moves: {summary.total_moves_agent2}")
+    print(f"  {summary.agent2_name} avg move time: {summary.avg_move_time_agent2:.6f}s")
     print(f"  {summary.agent2_name} total move time: {summary.total_move_time_agent2:.4f}s")
 
     print_nested_stats(f"{summary.agent1_name} INTERNAL STATS", summary.agent1_internal_stats)
