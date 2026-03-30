@@ -17,6 +17,10 @@ class GameStats:
     is_draw: bool
     moves_played: int
     duration_seconds: float
+
+    move_count_p1: int
+    move_count_p2: int
+
     avg_move_time_p1: float
     avg_move_time_p2: float
     total_move_time_p1: float
@@ -47,7 +51,13 @@ class EvaluationSummary:
     total_move_time_agent1: float = 0.0
     total_move_time_agent2: float = 0.0
 
+    total_moves_agent1: int = 0
+    total_moves_agent2: int = 0
+
     avg_game_duration: float = 0.0
+
+    agent1_internal_stats: Dict[str, Any] = field(default_factory=dict)
+    agent2_internal_stats: Dict[str, Any] = field(default_factory=dict)
 
     game_results: List[GameStats] = field(default_factory=list)
 
@@ -73,7 +83,11 @@ class EvaluationSummary:
             "avg_move_time_agent2": self.avg_move_time_agent2,
             "total_move_time_agent1": self.total_move_time_agent1,
             "total_move_time_agent2": self.total_move_time_agent2,
+            "total_moves_agent1": self.total_moves_agent1,
+            "total_moves_agent2": self.total_moves_agent2,
             "avg_game_duration": self.avg_game_duration,
+            "agent1_internal_stats": self.agent1_internal_stats,
+            "agent2_internal_stats": self.agent2_internal_stats,
             "game_results": self.game_results,
         }
 
@@ -104,9 +118,6 @@ def play_one_game(
     print_moves: bool = False,
 ) -> GameStats:
     game = game_class()
-
-    _reset_agent_stats_if_supported(player1_agent)
-    _reset_agent_stats_if_supported(player2_agent)
 
     agents_by_player = {
         1: player1_agent,
@@ -168,6 +179,12 @@ def play_one_game(
     else:
         raise ValueError(f"Unexpected winner value: {game.winner}")
 
+    move_count_p1 = len(move_times[1])
+    move_count_p2 = len(move_times[2])
+
+    total_move_time_p1 = sum(move_times[1])
+    total_move_time_p2 = sum(move_times[2])
+
     return GameStats(
         game_number=game_number,
         player1_agent=player1_agent.name,
@@ -178,10 +195,12 @@ def play_one_game(
         is_draw=is_draw,
         moves_played=moves_played,
         duration_seconds=duration_seconds,
-        avg_move_time_p1=_safe_mean(move_times[1]),
-        avg_move_time_p2=_safe_mean(move_times[2]),
-        total_move_time_p1=sum(move_times[1]),
-        total_move_time_p2=sum(move_times[2]),
+        move_count_p1=move_count_p1,
+        move_count_p2=move_count_p2,
+        avg_move_time_p1=(total_move_time_p1 / move_count_p1) if move_count_p1 else 0.0,
+        avg_move_time_p2=(total_move_time_p2 / move_count_p2) if move_count_p2 else 0.0,
+        total_move_time_p1=total_move_time_p1,
+        total_move_time_p2=total_move_time_p2,
     )
 
 
@@ -199,6 +218,10 @@ def evaluate_agents(
     Alternates which agent is Player 1 to reduce first-player bias.
     """
 
+    # Reset ONCE for the whole evaluation
+    _reset_agent_stats_if_supported(agent1)
+    _reset_agent_stats_if_supported(agent2)
+
     summary = EvaluationSummary(
         total_games=num_games,
         agent1_name=agent1.name,
@@ -207,8 +230,6 @@ def evaluate_agents(
 
     all_game_lengths: List[int] = []
     all_game_durations: List[float] = []
-    all_move_times_agent1: List[float] = []
-    all_move_times_agent2: List[float] = []
 
     for game_number in range(1, num_games + 1):
         if game_number % 2 == 1:
@@ -234,15 +255,15 @@ def evaluate_agents(
         all_game_durations.append(game_stats.duration_seconds)
 
         if agent1_is_player == 1:
-            all_move_times_agent1.append(game_stats.avg_move_time_p1)
-            all_move_times_agent2.append(game_stats.avg_move_time_p2)
             summary.total_move_time_agent1 += game_stats.total_move_time_p1
             summary.total_move_time_agent2 += game_stats.total_move_time_p2
+            summary.total_moves_agent1 += game_stats.move_count_p1
+            summary.total_moves_agent2 += game_stats.move_count_p2
         else:
-            all_move_times_agent1.append(game_stats.avg_move_time_p2)
-            all_move_times_agent2.append(game_stats.avg_move_time_p1)
             summary.total_move_time_agent1 += game_stats.total_move_time_p2
             summary.total_move_time_agent2 += game_stats.total_move_time_p1
+            summary.total_moves_agent1 += game_stats.move_count_p2
+            summary.total_moves_agent2 += game_stats.move_count_p1
 
         if game_stats.is_draw:
             summary.draws += 1
@@ -277,10 +298,40 @@ def evaluate_agents(
     summary.min_game_length = min(all_game_lengths) if all_game_lengths else 0
     summary.max_game_length = max(all_game_lengths) if all_game_lengths else 0
     summary.avg_game_duration = _safe_mean(all_game_durations)
-    summary.avg_move_time_agent1 = _safe_mean(all_move_times_agent1)
-    summary.avg_move_time_agent2 = _safe_mean(all_move_times_agent2)
+
+    summary.avg_move_time_agent1 = (
+        summary.total_move_time_agent1 / summary.total_moves_agent1
+        if summary.total_moves_agent1 else 0.0
+    )
+    summary.avg_move_time_agent2 = (
+        summary.total_move_time_agent2 / summary.total_moves_agent2
+        if summary.total_moves_agent2 else 0.0
+    )
+
+    summary.agent1_internal_stats = _get_agent_stats_if_supported(agent1)
+    summary.agent2_internal_stats = _get_agent_stats_if_supported(agent2)
 
     return summary
+
+
+def print_nested_stats(title: str, stats: Dict[str, Any]) -> None:
+    if not stats:
+        return
+
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+
+    for section, values in stats.items():
+        print(f"\n{section}:")
+        if isinstance(values, dict):
+            for key, value in values.items():
+                if isinstance(value, float):
+                    print(f"  {key}: {value:.4f}")
+                else:
+                    print(f"  {key}: {value}")
+        else:
+            print(f"  {values}")
 
 
 def print_evaluation_summary(summary: EvaluationSummary) -> None:
@@ -319,9 +370,12 @@ def print_evaluation_summary(summary: EvaluationSummary) -> None:
 
     print("\nTiming:")
     print(f"  Average game duration: {summary.avg_game_duration:.4f}s")
+    print(f"  {summary.agent1_name} total moves: {summary.total_moves_agent1}")
+    print(f"  {summary.agent2_name} total moves: {summary.total_moves_agent2}")
     print(f"  {summary.agent1_name} avg move time: {summary.avg_move_time_agent1:.6f}s")
     print(f"  {summary.agent2_name} avg move time: {summary.avg_move_time_agent2:.6f}s")
     print(f"  {summary.agent1_name} total move time: {summary.total_move_time_agent1:.4f}s")
     print(f"  {summary.agent2_name} total move time: {summary.total_move_time_agent2:.4f}s")
 
-    print("=" * 60)
+    print_nested_stats(f"{summary.agent1_name} INTERNAL STATS", summary.agent1_internal_stats)
+    print_nested_stats(f"{summary.agent2_name} INTERNAL STATS", summary.agent2_internal_stats)

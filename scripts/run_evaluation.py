@@ -1,12 +1,13 @@
 from engine import Connect4
 from agents.random_agent import RandomAgent
 from agents.mcts_agent import MCTSAgent
+from agents.rule_based_agent import RuleBasedAgent
 from evaluation.evaluate import evaluate_agents, print_evaluation_summary
 
 
 def main():
-    agent1 = MCTSAgent(name="MCTS", iterations=2000)
-    agent2 = RandomAgent(name="Random")
+    agent1 = MCTSAgent(name="MCTS-2000", iterations=2000)
+    agent2 = RuleBasedAgent(name="RuleBased")
 
     summary = evaluate_agents(
         game_class=Connect4,
