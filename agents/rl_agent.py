@@ -39,10 +39,21 @@ class RLPolicyAgent(BaseAgent):
     def _load_model(self, path: str, small_network: bool = False):
         model = PolicyValueNetSmall() if small_network else PolicyValueNet()
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["model_state_dict"])
+        state_dict = checkpoint["model_state_dict"] if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint else checkpoint
+
+        # Determine architecture from saved config, then key names, then caller hint
+        if isinstance(checkpoint, dict) and "config" in checkpoint:
+            cfg = checkpoint["config"]
+            if cfg.get("small_network"):
+                model = ValueNetworkSmall()
+            else:
+                model = ValueNetwork(cfg.get("num_filters", 128), cfg.get("num_res_blocks", 4))
+        elif any(k.startswith("features.") for k in state_dict):
+            model = ValueNetworkSmall()
         else:
-            model.load_state_dict(checkpoint)
+            model = ValueNetworkSmall() if small_network else ValueNetwork()
+
+        model.load_state_dict(state_dict)
         model.eval()
         return model
 
