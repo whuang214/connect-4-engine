@@ -7,7 +7,7 @@ from evaluation.evaluate import evaluate_agents, print_evaluation_summary
 
 def main():
     agent1 = MCTSAgent(name="MCTS-2000", iterations=2000)
-    agent2 = RuleBasedAgent(name="RuleBased")
+    agent2 = MCTSAgent(name="MCTS-1000", iterations=1000)
 
     summary = evaluate_agents(
         game_class=Connect4,
