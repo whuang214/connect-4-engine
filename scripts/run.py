@@ -11,21 +11,22 @@ from agents.mcts_agent import MCTSAgent
 from ui.game_ui import GameUI
 
 
-def create_agent(agent_type: str, name: str, iterations: int = 1000, model_path: str | None = None):
+def create_agent(agent_type: str, name: str | None = None,
+                 iterations: int = 1000,
+                 model_path: str | None = None):
     agent_type = agent_type.lower()
-
     if agent_type == "human":
-        return HumanAgent(name=name)
+        return HumanAgent(name=name) if name else HumanAgent()
 
     if agent_type == "random":
-        return RandomAgent(name=name)
+        return RandomAgent(name=name) if name else RandomAgent()
 
     if agent_type == "rule":
-        return RuleBasedAgent(name=name)
+        return RuleBasedAgent(name=name) if name else RuleBasedAgent()
 
     if agent_type == "mcts":
-        return MCTSAgent(name=name, iterations=iterations)
-
+        return MCTSAgent(name=name, iterations=iterations) if name else MCTSAgent(iterations=iterations)
+    
     if agent_type == "rl":
         pass  # Placeholder for future RL agent implementation
 
@@ -142,8 +143,8 @@ def build_parser():
         subparser.add_argument("--agent2", type=str, default="mcts",
                                choices=["human", "random", "rule", "mcts", "rl"])
 
-        subparser.add_argument("--name1", type=str, default="Player1")
-        subparser.add_argument("--name2", type=str, default="Player2")
+        subparser.add_argument("--name1", type=str, default=None)
+        subparser.add_argument("--name2", type=str, default=None)
 
         subparser.add_argument("--iterations1", type=int, default=1000,
                                help="Used if agent1 is MCTS")
