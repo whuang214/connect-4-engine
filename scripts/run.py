@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from engine import Connect4
 from evaluation.evaluate import evaluate_agents, print_evaluation_summary
@@ -7,6 +8,10 @@ from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
+from agents.rl_agent import RLAgent
+
+
+DEFAULT_RL_MODEL_PATH = "runs/run1/final_model.pt"
 
 
 def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
@@ -22,6 +27,23 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
         return "mcts", int(value)
 
     return agent_type, iterations
+
+
+def resolve_rl_model_path(model_path: str | None) -> str:
+    """
+    Return the RL model path to use.
+    If no path is provided, fall back to the default final model path.
+    """
+    path = model_path or DEFAULT_RL_MODEL_PATH
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"RL model file not found: '{path}'. "
+            f"Pass --model1/--model2 explicitly or place the model at "
+            f"'{DEFAULT_RL_MODEL_PATH}'."
+        )
+
+    return path
 
 
 def create_agent(
@@ -42,10 +64,19 @@ def create_agent(
         return RuleBasedAgent(name=name) if name else RuleBasedAgent()
 
     if agent_type == "mcts":
-        return MCTSAgent(name=name, iterations=iterations) if name else MCTSAgent(iterations=iterations)
+        return (
+            MCTSAgent(name=name, iterations=iterations)
+            if name
+            else MCTSAgent(iterations=iterations)
+        )
 
     if agent_type == "rl":
-        raise NotImplementedError("RL agent not wired yet.")
+        resolved_model_path = resolve_rl_model_path(model_path)
+        return (
+            RLAgent(name=name, model_path=resolved_model_path)
+            if name
+            else RLAgent(model_path=resolved_model_path)
+        )
 
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
@@ -102,7 +133,7 @@ def run_play_mode(args):
 
 
 def run_ui_mode(args):
-    from ui.game_ui import GameUI  # ✅ lazy import fixes pygame issue
+    from ui.game_ui import GameUI  # lazy import for pygame
 
     parsed_agent1_type, _ = parse_agent_config(args.agent1, args.iterations1)
     parsed_agent2_type, _ = parse_agent_config(args.agent2, args.iterations2)
@@ -134,7 +165,10 @@ def run_eval_mode(args):
         mode="Evaluation",
         agent1=agent1,
         agent2=agent2,
-        extra=f"Games: {args.games} | Render: {args.render} | PrintEachGame: {not args.no_print_each_game}",
+        extra=(
+            f"Games: {args.games} | Render: {args.render} | "
+            f"PrintEachGame: {not args.no_print_each_game}"
+        ),
     )
 
     summary = evaluate_agents(
@@ -175,6 +209,8 @@ def build_parser():
         subparser.add_argument("--iterations1", type=int, default=1000)
         subparser.add_argument("--iterations2", type=int, default=1000)
 
+        # If agent is rl and no model path is passed, it will use:
+        # runs/run1/final_model.pt
         subparser.add_argument("--model1", type=str, default=None)
         subparser.add_argument("--model2", type=str, default=None)
 
@@ -192,8 +228,6 @@ def build_parser():
     add_agent_args(eval_parser)
     eval_parser.add_argument("--games", type=int, default=10)
     eval_parser.add_argument("--render", action="store_true")
-
-    # 🔥 defaults ON → so we use "disable flag"
     eval_parser.add_argument("--no-print-each-game", action="store_true")
     eval_parser.add_argument("--print-moves", action="store_true")
 
