@@ -8,13 +8,30 @@ from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
 
-from ui.game_ui import GameUI
+
+def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
+    agent_type = agent_type.lower().strip()
+
+    if agent_type.startswith("mcts-"):
+        _, value = agent_type.split("-", 1)
+        if not value.isdigit():
+            raise ValueError(
+                f"Invalid MCTS agent format: '{agent_type}'. "
+                f"Expected format like 'mcts-5000'."
+            )
+        return "mcts", int(value)
+
+    return agent_type, iterations
 
 
-def create_agent(agent_type: str, name: str | None = None,
-                 iterations: int = 1000,
-                 model_path: str | None = None):
-    agent_type = agent_type.lower()
+def create_agent(
+    agent_type: str,
+    name: str | None = None,
+    iterations: int = 1000,
+    model_path: str | None = None,
+):
+    agent_type, iterations = parse_agent_config(agent_type, iterations)
+
     if agent_type == "human":
         return HumanAgent(name=name) if name else HumanAgent()
 
@@ -26,11 +43,24 @@ def create_agent(agent_type: str, name: str | None = None,
 
     if agent_type == "mcts":
         return MCTSAgent(name=name, iterations=iterations) if name else MCTSAgent(iterations=iterations)
-    
-    if agent_type == "rl":
-        pass  # Placeholder for future RL agent implementation
 
-    raise ValueError(f"Unknown agent type: {agent_type}")
+    if agent_type == "rl":
+        raise NotImplementedError("RL agent is not wired into scripts/run.py yet.")
+
+    raise ValueError(
+        f"Unknown agent type: '{agent_type}'. "
+        f"Use one of: human, random, rule, mcts, mcts-<iterations>, rl"
+    )
+
+
+def print_run_header(mode: str, agent1, agent2, extra: str | None = None):
+    print("=" * 60)
+    print(f"Mode: {mode}")
+    print(f"Player 1: {agent1.name}")
+    print(f"Player 2: {agent2.name}")
+    if extra:
+        print(extra)
+    print("=" * 60)
 
 
 def play_game(agent1, agent2, render: bool = True):
@@ -71,23 +101,44 @@ def run_play_mode(args):
         model_path=args.model2,
     )
 
+    print_run_header(
+        mode="CLI Play",
+        agent1=agent1,
+        agent2=agent2,
+        extra=f"Render: {not args.no_render}",
+    )
+
     play_game(agent1, agent2, render=not args.no_render)
 
 
 def run_ui_mode(args):
-    agent1 = None if args.agent1 == "human" else create_agent(
+    from ui.game_ui import GameUI
+
+    parsed_agent1_type, _ = parse_agent_config(args.agent1, args.iterations1)
+    parsed_agent2_type, _ = parse_agent_config(args.agent2, args.iterations2)
+
+    agent1 = None if parsed_agent1_type == "human" else create_agent(
         agent_type=args.agent1,
         name=args.name1,
         iterations=args.iterations1,
         model_path=args.model1,
     )
 
-    agent2 = None if args.agent2 == "human" else create_agent(
+    agent2 = None if parsed_agent2_type == "human" else create_agent(
         agent_type=args.agent2,
         name=args.name2,
         iterations=args.iterations2,
         model_path=args.model2,
     )
+
+    p1_name = "Human" if agent1 is None else agent1.name
+    p2_name = "Human" if agent2 is None else agent2.name
+
+    print("=" * 60)
+    print("Mode: UI")
+    print(f"Player 1: {p1_name}")
+    print(f"Player 2: {p2_name}")
+    print("=" * 60)
 
     GameUI(player1_agent=agent1, player2_agent=agent2).run()
 
@@ -104,6 +155,13 @@ def run_eval_mode(args):
         name=args.name2,
         iterations=args.iterations2,
         model_path=args.model2,
+    )
+
+    print_run_header(
+        mode="Evaluation",
+        agent1=agent1,
+        agent2=agent2,
+        extra=f"Games: {args.games} | Render: {args.render}",
     )
 
     summary = evaluate_agents(
@@ -131,42 +189,51 @@ def run_eval_mode(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Connect 4 runner: play games, launch UI, or evaluate agents."
+        description="Connect 4 runner: play CLI games, launch UI, or evaluate agents."
     )
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
-    # Shared agent args helper
     def add_agent_args(subparser):
-        subparser.add_argument("--agent1", type=str, default="human",
-                               choices=["human", "random", "rule", "mcts", "rl"])
-        subparser.add_argument("--agent2", type=str, default="mcts",
-                               choices=["human", "random", "rule", "mcts", "rl"])
+        subparser.add_argument(
+            "--agent1",
+            type=str,
+            default="human",
+            help="Agent for player 1: human, random, rule, mcts, mcts-5000, rl",
+        )
+        subparser.add_argument(
+            "--agent2",
+            type=str,
+            default="mcts",
+            help="Agent for player 2: human, random, rule, mcts, mcts-5000, rl",
+        )
 
         subparser.add_argument("--name1", type=str, default=None)
         subparser.add_argument("--name2", type=str, default=None)
 
-        subparser.add_argument("--iterations1", type=int, default=1000,
-                               help="Used if agent1 is MCTS")
-        subparser.add_argument("--iterations2", type=int, default=1000,
-                               help="Used if agent2 is MCTS")
+        subparser.add_argument(
+            "--iterations1",
+            type=int,
+            default=1000,
+            help="MCTS iterations for player 1 if using plain 'mcts'",
+        )
+        subparser.add_argument(
+            "--iterations2",
+            type=int,
+            default=1000,
+            help="MCTS iterations for player 2 if using plain 'mcts'",
+        )
 
-        subparser.add_argument("--model1", type=str, default=None,
-                               help="Optional model path for RL agent1")
-        subparser.add_argument("--model2", type=str, default=None,
-                               help="Optional model path for RL agent2")
+        subparser.add_argument("--model1", type=str, default=None)
+        subparser.add_argument("--model2", type=str, default=None)
 
-    # play mode
     play_parser = subparsers.add_parser("play", help="Play a terminal/CLI game")
     add_agent_args(play_parser)
-    play_parser.add_argument("--no-render", action="store_true",
-                             help="Disable board rendering in terminal")
+    play_parser.add_argument("--no-render", action="store_true")
 
-    # ui mode
     ui_parser = subparsers.add_parser("ui", help="Launch graphical UI")
     add_agent_args(ui_parser)
 
-    # eval mode
     eval_parser = subparsers.add_parser("eval", help="Run evaluation matches")
     add_agent_args(eval_parser)
     eval_parser.add_argument("--games", type=int, default=10)

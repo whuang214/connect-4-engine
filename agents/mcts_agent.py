@@ -58,7 +58,7 @@ class MCTSNode:
 
 class MCTSAgent(BaseAgent):
     def __init__(self, name=None, iterations=2000, exploration_weight=1.414):
-        name = name or f"mcts-{iterations}" # name is mcts-{iterations} by default, but can be overridden by args
+        name = name or f"MCTS-{iterations}" # name is MCTS-{iterations} by default, but can be overridden by args
         super().__init__(name)
 
         self.iterations = iterations
