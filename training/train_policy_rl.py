@@ -232,7 +232,12 @@ class EvalSummary:
 class Trainer:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            print(f"Using CUDA: {torch.cuda.get_device_name(0)}")
+        else:
+            self.device = torch.device("cpu")
+            print("Using CPU (CUDA not available)")
         self.run_dir = os.path.join(args.output_dir, args.run_name)
         self.ckpt_dir = os.path.join(self.run_dir, "checkpoints")
         os.makedirs(self.ckpt_dir, exist_ok=True)
@@ -451,6 +456,7 @@ class Trainer:
         )
 
     def run(self) -> None:
+        print(f"PyTorch version: {torch.__version__}")
         print(f"Using device: {self.device}")
         param_count = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         print(f"Trainable params: {param_count:,}")
@@ -477,14 +483,19 @@ class Trainer:
             )
             self.buffer.add_episode(states, actions, returns, augment_mirror=self.args.augment_mirror)
 
+            did_update = False
+
             if len(self.buffer) >= self.args.batch_size:
                 for _ in range(self.args.updates_per_episode):
                     p_loss, v_loss, ent = self.train_batch()
                     recent_policy_losses.append(p_loss)
                     recent_value_losses.append(v_loss)
                     recent_entropies.append(ent)
+                    did_update = True
 
-            self.scheduler.step()
+            if did_update:
+                self.scheduler.step()
+
             self.maybe_snapshot(episode + 1)
 
             avg_pl = np.mean(recent_policy_losses[-200:]) if recent_policy_losses else 0.0
