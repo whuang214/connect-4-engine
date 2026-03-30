@@ -4,10 +4,17 @@ from agents.base_agent import BaseAgent
 
 
 class MCTSNode:
-    def __init__(self, parent=None, move=None, player_just_moved=None):
+    def __init__(
+        self,
+        parent=None,
+        move=None,
+        player_just_moved=None,
+        state_key=None,
+    ):
         self.parent = parent
         self.move = move
         self.player_just_moved = player_just_moved
+        self.state_key = state_key
 
         self.children = []
         self.untried_moves = None
@@ -55,6 +62,10 @@ class MCTSAgent(BaseAgent):
         self.iterations = iterations
         self.exploration_weight = exploration_weight
         self.center_order = [3, 2, 4, 1, 5, 0, 6]
+
+        # persistent root for tree reuse
+        self.root = None
+
         self.reset_stats()
 
     def reset_stats(self) -> None:
@@ -72,6 +83,13 @@ class MCTSAgent(BaseAgent):
         self.chosen_move_visits = []
         self.chosen_move_win_rates = []
 
+        # reuse stats
+        self.tree_reuse_hits = 0
+        self.tree_rebuilds = 0
+
+        # clear saved tree when stats reset
+        self.root = None
+
     def choose_action(self, game) -> int:
         legal_moves = game.get_legal_moves()
 
@@ -88,6 +106,9 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(1)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
+
+            # tree becomes unreliable if we skip search entirely
+            self.root = None
             return legal_moves[0]
 
         # 1. Immediate win
@@ -99,6 +120,9 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(0)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(1.0)
+
+            # safest simple behavior: clear tree on tactical shortcut
+            self.root = None
             return winning_move
 
         # 2. Immediate block
@@ -110,9 +134,13 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(0)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
+
+            # safest simple behavior: clear tree on tactical shortcut
+            self.root = None
             return block_move
 
-        root = MCTSNode(parent=None, move=None, player_just_moved=opponent)
+        # reuse or rebuild root
+        root = self.sync_root_to_game(game)
 
         sims_this_move = 0
 
@@ -156,6 +184,7 @@ class MCTSAgent(BaseAgent):
                         parent=node,
                         move=move,
                         player_just_moved=player_making_move,
+                        state_key=self.get_state_key(game),
                     )
                     node.children.append(child)
                     node = child
@@ -172,7 +201,7 @@ class MCTSAgent(BaseAgent):
             for visited_node in path:
                 visited_node.update(terminal_winner)
 
-            # Undo selection/expansion/rollout path
+            # Undo selection/expansion path
             for _ in range(len(applied_moves)):
                 game.undo_move()
 
@@ -186,6 +215,8 @@ class MCTSAgent(BaseAgent):
             chosen_move = fallback_moves[0]
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
+
+            self.root = None
             return chosen_move
 
         # Final move choice:
@@ -196,7 +227,13 @@ class MCTSAgent(BaseAgent):
         )
 
         self.chosen_move_visits.append(best_child.visits)
-        self.chosen_move_win_rates.append(self.child_value_for_root(best_child, root_player))
+        self.chosen_move_win_rates.append(
+            self.child_value_for_root(best_child, root_player)
+        )
+
+        # advance tree root to chosen move for reuse next turn
+        best_child.parent = None
+        self.root = best_child
 
         return best_child.move
 
@@ -361,6 +398,59 @@ class MCTSAgent(BaseAgent):
 
         return None
 
+    def get_state_key(self, game):
+        """
+        Hashable representation of the current game state.
+        Includes current_player because same board with different side to move
+        is a different search state.
+        """
+        return (
+            tuple(tuple(row) for row in game.board),
+            game.current_player,
+        )
+
+    def sync_root_to_game(self, game):
+        """
+        Try to reuse the existing tree.
+        Cases:
+        1. No saved tree -> build fresh root
+        2. Saved root exactly matches current state -> reuse it
+        3. One of saved root's children matches current state -> promote child
+        4. Otherwise -> rebuild fresh root
+        """
+        current_key = self.get_state_key(game)
+        opponent = self.get_opponent(game.current_player)
+
+        if self.root is None:
+            self.tree_rebuilds += 1
+            self.root = MCTSNode(
+                parent=None,
+                move=None,
+                player_just_moved=opponent,
+                state_key=current_key,
+            )
+            return self.root
+
+        if self.root.state_key == current_key:
+            self.tree_reuse_hits += 1
+            return self.root
+
+        for child in self.root.children:
+            if child.state_key == current_key:
+                child.parent = None
+                self.root = child
+                self.tree_reuse_hits += 1
+                return self.root
+
+        self.tree_rebuilds += 1
+        self.root = MCTSNode(
+            parent=None,
+            move=None,
+            player_just_moved=opponent,
+            state_key=current_key,
+        )
+        return self.root
+
     def get_opponent(self, player):
         return 2 if player == 1 else 1
 
@@ -404,5 +494,9 @@ class MCTSAgent(BaseAgent):
                     sum(self.chosen_move_win_rates) / len(self.chosen_move_win_rates)
                     if self.chosen_move_win_rates else 0.0
                 ),
+            },
+            "Tree Reuse": {
+                "Reuse hits": self.tree_reuse_hits,
+                "Tree rebuilds": self.tree_rebuilds,
             },
         }
