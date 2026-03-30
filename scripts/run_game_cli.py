@@ -5,8 +5,6 @@ from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
 from agents.rl_agent import RLAgent
 
-
-
 def play_game(agent1, agent2, render=True):
     game = Connect4()
 
