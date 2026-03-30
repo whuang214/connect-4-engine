@@ -29,6 +29,7 @@ from models.value_network import ValueNetwork, ValueNetworkSmall
 from agents.rl_agent import RLAgent
 from agents.random_agent import RandomAgent
 from agents.rule_based_agent import RuleBasedAgent
+from agents.mcts_agent import MCTSAgent
 from training.self_play import (
     ReplayBuffer,
     play_game_collect_data,
@@ -57,6 +58,8 @@ def parse_args():
     parser.add_argument("--frac-random", type=float, default=0.3)
     parser.add_argument("--frac-rulebased", type=float, default=0.4)
     parser.add_argument("--frac-selfplay", type=float, default=0.3)
+    parser.add_argument("--frac-mcts", type=float, default=0.0)
+    parser.add_argument("--mcts-iterations", type=int, default=1000)
 
     # Network
     parser.add_argument("--small-network", action="store_true")
@@ -82,7 +85,8 @@ def get_epsilon(episode, start, end, decay_episodes):
     return start + (end - start) * (episode / decay_episodes)
 
 
-def choose_opponent(frac_random, frac_rulebased, random_opp, rulebased_opp):
+def choose_opponent(frac_random, frac_rulebased, frac_mcts,
+                    random_opp, rulebased_opp, mcts_opp):
     """
     Randomly select an opponent type.
     Returns (opponent, name) or (None, "selfplay") for self-play.
@@ -92,6 +96,8 @@ def choose_opponent(frac_random, frac_rulebased, random_opp, rulebased_opp):
         return random_opp, "random"
     elif r < frac_random + frac_rulebased:
         return rulebased_opp, "rulebased"
+    elif r < frac_random + frac_rulebased + frac_mcts:
+        return mcts_opp, "mcts"
     else:
         return None, "selfplay"
 
@@ -140,9 +146,18 @@ def main():
         if "episode" in checkpoint:
             start_episode = checkpoint["episode"]
 
+    total_frac = args.frac_random + args.frac_rulebased + args.frac_selfplay + args.frac_mcts
+    if abs(total_frac - 1.0) > 1e-6:
+        raise ValueError(
+            f"Opponent fractions must sum to 1.0, got {total_frac:.4f}. "
+            f"(random={args.frac_random}, rulebased={args.frac_rulebased}, "
+            f"selfplay={args.frac_selfplay}, mcts={args.frac_mcts})"
+        )
+
     # Opponents
     random_opp = RandomAgent("Random")
     rulebased_opp = RuleBasedAgent("RuleBased")
+    mcts_opp = MCTSAgent("MCTS", iterations=args.mcts_iterations) if args.frac_mcts > 0 else None
 
     # Replay buffer
     replay_buffer = ReplayBuffer(capacity=args.buffer_size)
@@ -157,12 +172,13 @@ def main():
 
     # Rolling stats
     recent_losses = []
-    opp_counts = {"random": 0, "rulebased": 0, "selfplay": 0}
-    opp_wins = {"random": 0, "rulebased": 0, "selfplay": 0}
+    opp_counts = {"random": 0, "rulebased": 0, "selfplay": 0, "mcts": 0}
+    opp_wins = {"random": 0, "rulebased": 0, "selfplay": 0, "mcts": 0}
 
     print(f"\nStarting training for {args.episodes} episodes...")
+    mcts_str = f", {args.frac_mcts:.0%} MCTS-{args.mcts_iterations}" if args.frac_mcts > 0 else ""
     print(f"Opponent mix: {args.frac_random:.0%} Random, "
-          f"{args.frac_rulebased:.0%} RuleBased, {args.frac_selfplay:.0%} Self-play")
+          f"{args.frac_rulebased:.0%} RuleBased, {args.frac_selfplay:.0%} Self-play{mcts_str}")
     print(f"Epsilon: {args.epsilon_start} -> {args.epsilon_end} over "
           f"{args.epsilon_decay_episodes} episodes")
     print(f"LR: {args.lr} (cosine decay to 1e-5), Batch size: {args.batch_size}")
@@ -181,7 +197,8 @@ def main():
 
         # --- Play one game and collect data ---
         opponent, opp_type = choose_opponent(
-            args.frac_random, args.frac_rulebased, random_opp, rulebased_opp
+            args.frac_random, args.frac_rulebased, args.frac_mcts,
+            random_opp, rulebased_opp, mcts_opp,
         )
         opp_counts[opp_type] += 1
 
@@ -224,12 +241,16 @@ def main():
         if recent_losses:
             avg_loss = np.mean(recent_losses[-200:])
             wr_rb = opp_wins["rulebased"] / max(opp_counts["rulebased"], 1)
-            pbar.set_postfix({
+            wr_mcts = opp_wins["mcts"] / max(opp_counts["mcts"], 1)
+            postfix = {
                 "ε": f"{epsilon:.2f}",
                 "loss": f"{avg_loss:.4f}",
                 "buf": f"{len(replay_buffer)//1000}k",
                 "rb_wr": f"{wr_rb:.0%}",
-            })
+            }
+            if args.frac_mcts > 0:
+                postfix["mcts_wr"] = f"{wr_mcts:.0%}"
+            pbar.set_postfix(postfix)
 
         # --- Periodic logging ---
         if (ep_idx + 1) % 500 == 0:
@@ -239,17 +260,19 @@ def main():
 
             wr_rand = opp_wins["random"] / max(opp_counts["random"], 1)
             wr_rb = opp_wins["rulebased"] / max(opp_counts["rulebased"], 1)
+            wr_mcts = opp_wins["mcts"] / max(opp_counts["mcts"], 1)
 
+            mcts_str = f" mcts={wr_mcts:.0%}" if args.frac_mcts > 0 else ""
             tqdm.write(
                 f"Ep {episode + 1:>7d} | ε={epsilon:.3f} | "
                 f"loss={avg_loss:.4f} | buf={len(replay_buffer):,} | "
-                f"train_wr: rand={wr_rand:.0%} rb={wr_rb:.0%} | "
+                f"train_wr: rand={wr_rand:.0%} rb={wr_rb:.0%}{mcts_str} | "
                 f"{eps_per_sec:.1f} ep/s"
             )
 
             # Reset opponent tracking every 500 eps for rolling stats
-            opp_counts = {"random": 0, "rulebased": 0, "selfplay": 0}
-            opp_wins = {"random": 0, "rulebased": 0, "selfplay": 0}
+            opp_counts = {"random": 0, "rulebased": 0, "selfplay": 0, "mcts": 0}
+            opp_wins = {"random": 0, "rulebased": 0, "selfplay": 0, "mcts": 0}
 
         # --- Periodic evaluation ---
         if (ep_idx + 1) % args.eval_interval == 0:
