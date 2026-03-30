@@ -1,0 +1,92 @@
+{
+  "RL Agent": {
+    "RL Agent": {
+      "win_rate": null,
+      "note": "self"
+    },
+    "Random": {
+      "win_rate": 0.96,
+      "loss_rate": 0.04,
+      "draw_rate": 0.0,
+      "wins": 192,
+      "losses": 8,
+      "draws": 0,
+      "avg_moves": 14.03,
+      "avg_decision_time_ms": 1.2877514077128112,
+      "p1_wins": 98,
+      "p2_wins": 94
+    },
+    "RuleBased": {
+      "win_rate": 1.0,
+      "loss_rate": 0.0,
+      "draw_rate": 0.0,
+      "wins": 200,
+      "losses": 0,
+      "draws": 0,
+      "avg_moves": 15.5,
+      "avg_decision_time_ms": 1.2171908738309867,
+      "p1_wins": 100,
+      "p2_wins": 100
+    }
+  },
+  "Random": {
+    "RL Agent": {
+      "win_rate": 0.015,
+      "loss_rate": 0.985,
+      "draw_rate": 0.0,
+      "wins": 3,
+      "losses": 197,
+      "draws": 0,
+      "avg_moves": 12.365,
+      "avg_decision_time_ms": 0.00142236984952632,
+      "p1_wins": 3,
+      "p2_wins": 0
+    },
+    "Random": {
+      "win_rate": null,
+      "note": "self"
+    },
+    "RuleBased": {
+      "win_rate": 0.005,
+      "loss_rate": 0.995,
+      "draw_rate": 0.0,
+      "wins": 1,
+      "losses": 199,
+      "draws": 0,
+      "avg_moves": 10.425,
+      "avg_decision_time_ms": 0.000662307516640767,
+      "p1_wins": 1,
+      "p2_wins": 0
+    }
+  },
+  "RuleBased": {
+    "RL Agent": {
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "draw_rate": 0.0,
+      "wins": 0,
+      "losses": 200,
+      "draws": 0,
+      "avg_moves": 15.5,
+      "avg_decision_time_ms": 0.6238828248654803,
+      "p1_wins": 0,
+      "p2_wins": 0
+    },
+    "Random": {
+      "win_rate": 0.99,
+      "loss_rate": 0.01,
+      "draw_rate": 0.0,
+      "wins": 198,
+      "losses": 2,
+      "draws": 0,
+      "avg_moves": 11.11,
+      "avg_decision_time_ms": 0.44788708604254024,
+      "p1_wins": 100,
+      "p2_wins": 98
+    },
+    "RuleBased": {
+      "win_rate": null,
+      "note": "self"
+    }
+  }
+}

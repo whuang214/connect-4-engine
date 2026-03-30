@@ -1,17 +1,18 @@
 """
-Self-Play Training Loop for Connect 4 RL Agent.
+Self-Play Training with Replay Buffer and Monte Carlo Returns.
 
-Uses Temporal Difference (TD) learning with self-play.
-Both players share the same value network. After each move,
-we compute a TD target and accumulate gradients.
-
-TD update rule:
-    - If game ongoing:  target = -V(s_{t+1})   (negated because opponent's perspective)
-    - If game ended:    target = actual reward   (+1 win, -1 loss, 0 draw)
-    - Loss = MSE(V(s_t), target)
+Key differences from the old approach:
+1. Monte Carlo returns instead of TD bootstrapping — targets are ACTUAL game
+   outcomes, not noisy network estimates. Much more stable.
+2. Replay buffer — stores (state, target) pairs from many games and samples
+   random batches, breaking correlations between consecutive states.
+3. Mixed opponents — trains against Random, RuleBased, and past versions of
+   itself, preventing the self-play collapse problem.
 """
 
 import random
+from collections import deque
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -20,102 +21,128 @@ from engine import Connect4
 from models.value_network import encode_board
 
 
-def play_training_episode(model, optimizer, device, epsilon=0.1, gamma=1.0):
+class ReplayBuffer:
     """
-    Play one full game of self-play and update the model after each move
-    using TD(0) learning.
+    Fixed-size buffer that stores (encoded_state, target_value) pairs.
+    When full, oldest entries are dropped.
+    Random sampling breaks temporal correlations between training examples.
+    """
 
-    Both sides use the same model with epsilon-greedy exploration.
+    def __init__(self, capacity=200_000):
+        self.buffer = deque(maxlen=capacity)
 
-    Args:
-        model: the ValueNetwork
-        optimizer: torch optimizer
-        device: torch device
-        epsilon: exploration rate
-        gamma: discount factor (1.0 is standard for finite games)
+    def add(self, state: np.ndarray, target: float):
+        self.buffer.append((state, target))
+
+    def add_batch(self, states: list, targets: list):
+        for s, t in zip(states, targets):
+            self.buffer.append((s, t))
+
+    def sample(self, batch_size: int):
+        batch = random.sample(self.buffer, min(batch_size, len(self.buffer)))
+        states = np.array([b[0] for b in batch])
+        targets = np.array([b[1] for b in batch], dtype=np.float32)
+        return states, targets
+
+    def __len__(self):
+        return len(self.buffer)
+
+
+def play_game_collect_data(agent_model, opponent, device, epsilon=0.1,
+                           agent_is_p1=True):
+    """
+    Play one full game between the RL agent and an opponent.
+    Collect all board states and compute Monte Carlo targets from the
+    actual game outcome.
+
+    The agent uses epsilon-greedy with agent_model.
+    The opponent uses its own choose_action method.
 
     Returns:
-        dict with episode statistics:
-            - winner: 1, 2, or None (draw)
-            - num_moves: total moves in the game
-            - total_loss: sum of TD losses over the episode
+        states: list of encoded board states (from current player's perspective)
+        targets: list of float targets (+1 win, -1 loss, 0 draw)
+        winner: game winner (1, 2, or None)
+        num_moves: total moves in game
     """
     game = Connect4()
-    model.train()
-
-    states = []     # Encoded board states collected during the game
-    total_loss = 0.0
-    num_moves = 0
+    positions = []  # List of (encoded_state, player_at_that_state)
 
     while not game.is_terminal():
-        # Encode current state BEFORE the move
-        state_before = encode_board(game)
         current_player = game.current_player
+        is_agent_turn = (current_player == 1) == agent_is_p1
 
-        # Choose action: epsilon-greedy
-        legal_moves = game.get_legal_moves()
+        # Record the board state from current player's perspective
+        encoded = encode_board(game)
+        positions.append((encoded, current_player))
 
-        if random.random() < epsilon:
-            action = random.choice(legal_moves)
+        # Choose move
+        if is_agent_turn:
+            move = _agent_choose(agent_model, game, epsilon, device)
         else:
-            action = _greedy_action(model, game, legal_moves, device)
+            move = opponent.choose_action(game)
 
-        # Evaluate current state
-        state_tensor = torch.tensor(
-            state_before, dtype=torch.float32
-        ).unsqueeze(0).to(device)
-        value_pred = model(state_tensor)  # V(s_t)
+        game.make_move(move)
 
-        # Make the move
-        result = game.make_move(action)
-        num_moves += 1
+    # Game is over — compute targets using actual outcome
+    winner = game.winner
+    states = []
+    targets = []
 
-        # Compute TD target
-        if result.done:
-            # Game is over - use actual reward
-            if result.winner == current_player:
-                target = 1.0
-            elif result.winner is not None:
-                target = -1.0
-            else:
-                target = 0.0  # Draw
-            target_tensor = torch.tensor(
-                [[target]], dtype=torch.float32
-            ).to(device)
+    for encoded, player in positions:
+        if winner is None:
+            target = 0.0  # Draw
+        elif winner == player:
+            target = 1.0  # This player won
         else:
-            # Game ongoing - bootstrap from next state
-            # The next state is from the OPPONENT's perspective (it's their turn now)
-            # V_opponent(s') estimates how good s' is for the opponent
-            # Our value of s' is -V_opponent(s')
-            with torch.no_grad():
-                next_state = encode_board(game)
-                next_tensor = torch.tensor(
-                    next_state, dtype=torch.float32
-                ).unsqueeze(0).to(device)
-                next_value = model(next_tensor)
-                target_tensor = -gamma * next_value  # Negate for opponent
+            target = -1.0  # This player lost
 
-        # TD update
-        loss = F.mse_loss(value_pred, target_tensor)
-        optimizer.zero_grad()
-        loss.backward()
+        states.append(encoded)
+        targets.append(target)
 
-        # Gradient clipping to prevent exploding gradients
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
-        optimizer.step()
-        total_loss += loss.item()
-
-    return {
-        "winner": game.winner,
-        "num_moves": num_moves,
-        "total_loss": total_loss,
-        "avg_loss": total_loss / max(num_moves, 1),
-    }
+    return states, targets, winner, len(positions)
 
 
-def _greedy_action(model, game, legal_moves, device):
-    """Pick the legal move with the highest estimated value."""
+def play_selfplay_collect_data(agent_model, device, epsilon=0.1):
+    """
+    Self-play: same model plays both sides with epsilon-greedy.
+    Collects positions from BOTH players' perspectives.
+    """
+    game = Connect4()
+    positions = []
+
+    while not game.is_terminal():
+        current_player = game.current_player
+        encoded = encode_board(game)
+        positions.append((encoded, current_player))
+
+        move = _agent_choose(agent_model, game, epsilon, device)
+        game.make_move(move)
+
+    winner = game.winner
+    states = []
+    targets = []
+
+    for encoded, player in positions:
+        if winner is None:
+            target = 0.0
+        elif winner == player:
+            target = 1.0
+        else:
+            target = -1.0
+
+        states.append(encoded)
+        targets.append(target)
+
+    return states, targets, winner, len(positions)
+
+
+def _agent_choose(model, game, epsilon, device):
+    """Epsilon-greedy move selection using the value network."""
+    legal_moves = game.get_legal_moves()
+
+    if random.random() < epsilon:
+        return random.choice(legal_moves)
+
     model.eval()
     best_value = float("-inf")
     best_move = legal_moves[0]
@@ -126,13 +153,12 @@ def _greedy_action(model, game, legal_moves, device):
             result = temp_game.make_move(move)
 
             if result.winner == game.current_player:
-                model.train()
-                return move  # Instant win
+                return move  # Instant win — always take it
 
             if result.draw:
                 value = 0.0
             elif result.done:
-                value = -1.0  # Opponent won somehow (shouldn't happen)
+                value = -1.0
             else:
                 board_tensor = torch.tensor(
                     encode_board(temp_game), dtype=torch.float32
@@ -144,98 +170,30 @@ def _greedy_action(model, game, legal_moves, device):
                 best_value = value
                 best_move = move
 
-    model.train()
     return best_move
 
 
-def play_training_episode_batched(model, optimizer, device, epsilon=0.1, gamma=1.0):
+def train_on_batch(model, optimizer, replay_buffer, device, batch_size=512):
     """
-    Alternative: collect all transitions in an episode, then do a single
-    batched update at the end. Can be more stable for some configurations.
-
-    Returns same stats dict as play_training_episode.
+    Sample a random batch from the replay buffer and do one gradient step.
+    Returns the loss value.
     """
-    game = Connect4()
-    model.eval()
+    if len(replay_buffer) < batch_size:
+        return 0.0
 
-    transitions = []  # List of (state_encoded, target) tuples
+    model.train()
 
-    while not game.is_terminal():
-        state_before = encode_board(game)
-        current_player = game.current_player
+    states, targets = replay_buffer.sample(batch_size)
 
-        legal_moves = game.get_legal_moves()
+    states_tensor = torch.tensor(states, dtype=torch.float32).to(device)
+    targets_tensor = torch.tensor(targets, dtype=torch.float32).unsqueeze(1).to(device)
 
-        if random.random() < epsilon:
-            action = random.choice(legal_moves)
-        else:
-            action = _greedy_action(model, game, legal_moves, device)
+    predictions = model(states_tensor)
+    loss = F.mse_loss(predictions, targets_tensor)
 
-        result = game.make_move(action)
+    optimizer.zero_grad()
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    optimizer.step()
 
-        # We'll fill in the target after the game ends for terminal states,
-        # and use bootstrap for intermediate states
-        transitions.append({
-            "state": state_before,
-            "player": current_player,
-            "result": result,
-        })
-
-    # Now compute targets
-    states_list = []
-    targets_list = []
-
-    for i, t in enumerate(transitions):
-        states_list.append(t["state"])
-
-        if t["result"].done:
-            # Terminal state - use actual outcome
-            if t["result"].winner == t["player"]:
-                targets_list.append(1.0)
-            elif t["result"].winner is not None:
-                targets_list.append(-1.0)
-            else:
-                targets_list.append(0.0)
-        else:
-            # Non-terminal - bootstrap from next state
-            # The next state in the game is from the opponent's perspective
-            next_state = transitions[i + 1]["state"] if i + 1 < len(transitions) else None
-            if next_state is not None:
-                with torch.no_grad():
-                    next_tensor = torch.tensor(
-                        next_state, dtype=torch.float32
-                    ).unsqueeze(0).to(device)
-                    model.eval()
-                    next_value = model(next_tensor).item()
-                targets_list.append(-gamma * next_value)
-            else:
-                targets_list.append(0.0)
-
-    # Batched update
-    if states_list:
-        model.train()
-        states_tensor = torch.tensor(
-            np.array(states_list), dtype=torch.float32
-        ).to(device)
-        targets_tensor = torch.tensor(
-            targets_list, dtype=torch.float32
-        ).unsqueeze(1).to(device)
-
-        predictions = model(states_tensor)
-        loss = F.mse_loss(predictions, targets_tensor)
-
-        optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
-
-        total_loss = loss.item()
-    else:
-        total_loss = 0.0
-
-    return {
-        "winner": game.winner,
-        "num_moves": len(transitions),
-        "total_loss": total_loss,
-        "avg_loss": total_loss,
-    }
+    return loss.item()
