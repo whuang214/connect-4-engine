@@ -4,225 +4,320 @@ from agents.base_agent import BaseAgent
 
 
 class MCTSNode:
-	def __init__(self, parent=None, move=None):
-		self.parent = parent
-		self.move = move  # move that led to this node
+    def __init__(self, parent=None, move=None):
+        self.parent = parent
+        self.move = move  # move that led to this node
 
-		self.children = []
-		self.untried_moves = None  # filled in when node is first visited
+        self.children = []
+        self.untried_moves = None  # filled in when node is first visited
 
-		self.visits = 0
-		self.value = 0.0  # accumulated value from root player's perspective
+        self.visits = 0
+        self.value = 0.0  # accumulated value from root player's perspective
 
-	def is_fully_expanded(self):
-		return self.untried_moves is not None and len(self.untried_moves) == 0
+    def is_fully_expanded(self):
+        return self.untried_moves is not None and len(self.untried_moves) == 0
 
-	def best_child(self, exploration_weight=1.414):
-		"""
-		Select child using UCB1:
-		exploitation + exploration
-		"""
-		best_score = float("-inf")
-		best_node = None
+    def best_child(self, exploration_weight=1.414):
+        """
+        Select child using UCB1:
+        exploitation + exploration
+        """
+        best_score = float("-inf")
+        best_node = None
 
-		log_parent_visits = math.log(self.visits)
+        log_parent_visits = math.log(self.visits)
 
-		for child in self.children:
-			if child.visits == 0:
-				score = float("inf")
-			else:
-				exploitation = child.value / child.visits
-				exploration = exploration_weight * math.sqrt(
-					log_parent_visits / child.visits
-				)
-				score = exploitation + exploration
+        for child in self.children:
+            if child.visits == 0:
+                score = float("inf")
+            else:
+                exploitation = child.value / child.visits
+                exploration = exploration_weight * math.sqrt(
+                    log_parent_visits / child.visits
+                )
+                score = exploitation + exploration
 
-			if score > best_score:
-				best_score = score
-				best_node = child
+            if score > best_score:
+                best_score = score
+                best_node = child
 
-		return best_node
+        return best_node
 
-	def backpropagate(self, result):
-		"""
-		result should be from the root player's perspective:
-		win = 1.0, draw = 0.5, loss = 0.0
-		"""
-		node = self
-		while node is not None:
-			node.visits += 1
-			node.value += result
-			node = node.parent
+    def backpropagate(self, result):
+        """
+        result should be from the root player's perspective:
+        win = 1.0, draw = 0.5, loss = 0.0
+        """
+        node = self
+        while node is not None:
+            node.visits += 1
+            node.value += result
+            node = node.parent
 
 
 class MCTSAgent(BaseAgent):
-	def __init__(self, name="MCTSAgent", iterations=1000, exploration_weight=1.414):
-		super().__init__(name)
-		self.iterations = iterations
-		self.exploration_weight = exploration_weight
-		self.center_order = [3, 2, 4, 1, 5, 0, 6]
+    def __init__(self, name="MCTSAgent", iterations=1000, exploration_weight=1.414):
+        super().__init__(name)
+        self.iterations = iterations
+        self.exploration_weight = exploration_weight
+        self.center_order = [3, 2, 4, 1, 5, 0, 6]
+        self.reset_stats()
 
-	def choose_action(self, game) -> int:
-		legal_moves = game.get_legal_moves()
+    def reset_stats(self) -> None:
+        self.total_search_calls = 0
+        self.total_simulations = 0
+        self.total_rollout_moves = 0
+        self.moves_chosen = 0
 
-		if not legal_moves:
-			raise ValueError("No legal moves available.")
+        self.immediate_win_hits = 0
+        self.immediate_block_hits = 0
 
-		# If only one move exists, just play it
-		if len(legal_moves) == 1:
-			return legal_moves[0]
+        self.simulations_per_move = []
+        self.rollout_lengths = []
+        self.root_children_counts = []
+        self.chosen_move_visits = []
+        self.chosen_move_avg_values = []
 
-		current_player = game.current_player
-		opponent = self.get_opponent(current_player)
+    def choose_action(self, game) -> int:
+        legal_moves = game.get_legal_moves()
 
-		# 1. Immediate winning move
-		winning_move = self.find_immediate_win(game, current_player)
-		if winning_move is not None:
-			return winning_move
+        if not legal_moves:
+            raise ValueError("No legal moves available.")
 
-		# 2. Immediate block if opponent can win next turn
-		block_move = self.find_immediate_win(game, opponent)
-		if block_move is not None:
-			return block_move
+        self.total_search_calls += 1
 
-		root_player = game.current_player
-		root = MCTSNode()
+        # If only one move exists, just play it
+        if len(legal_moves) == 1:
+            self.moves_chosen += 1
+            self.simulations_per_move.append(0)
+            self.root_children_counts.append(1)
+            self.chosen_move_visits.append(0)
+            self.chosen_move_avg_values.append(0.0)
+            return legal_moves[0]
 
-		for _ in range(self.iterations):
-			node = root
-			path_moves = []
+        current_player = game.current_player
+        opponent = self.get_opponent(current_player)
 
-			# 1. Selection
-			while not game.is_terminal():
-				self.initialize_untried_moves(node, game)
+        # 1. Immediate winning move
+        winning_move = self.find_immediate_win(game, current_player)
+        if winning_move is not None:
+            self.moves_chosen += 1
+            self.immediate_win_hits += 1
+            self.simulations_per_move.append(0)
+            self.root_children_counts.append(0)
+            self.chosen_move_visits.append(0)
+            self.chosen_move_avg_values.append(1.0)
+            return winning_move
 
-				if not node.is_fully_expanded():
-					break
+        # 2. Immediate block if opponent can win next turn
+        block_move = self.find_immediate_win(game, opponent)
+        if block_move is not None:
+            self.moves_chosen += 1
+            self.immediate_block_hits += 1
+            self.simulations_per_move.append(0)
+            self.root_children_counts.append(0)
+            self.chosen_move_visits.append(0)
+            self.chosen_move_avg_values.append(0.0)
+            return block_move
 
-				if not node.children:
-					break
+        root_player = game.current_player
+        root = MCTSNode()
 
-				node = node.best_child(self.exploration_weight)
-				game.make_move(node.move)
-				path_moves.append(node.move)
+        sims_this_move = 0
 
-			# 2. Expansion
-			if not game.is_terminal():
-				self.initialize_untried_moves(node, game)
+        for _ in range(self.iterations):
+            sims_this_move += 1
+            node = root
+            path_moves = []
 
-				if node.untried_moves:
-					move = node.untried_moves.pop(0)  # center-prioritized
-					game.make_move(move)
-					path_moves.append(move)
+            # 1. Selection
+            while not game.is_terminal():
+                self.initialize_untried_moves(node, game)
 
-					child_node = MCTSNode(parent=node, move=move)
-					node.children.append(child_node)
-					node = child_node
+                if not node.is_fully_expanded():
+                    break
 
-			# 3. Simulation / Rollout
-			result = self.rollout(game, root_player)
+                if not node.children:
+                    break
 
-			# 4. Backpropagation
-			node.backpropagate(result)
+                node = node.best_child(self.exploration_weight)
+                game.make_move(node.move)
+                path_moves.append(node.move)
 
-			# Undo selection + expansion moves
-			for _ in range(len(path_moves)):
-				game.undo_move()
+            # 2. Expansion
+            if not game.is_terminal():
+                self.initialize_untried_moves(node, game)
 
-		# Choose the child with the most visits
-		best_child = max(root.children, key=lambda child: child.visits)
-		return best_child.move
+                if node.untried_moves:
+                    move = node.untried_moves.pop(0)  # center-prioritized
+                    game.make_move(move)
+                    path_moves.append(move)
 
-	def rollout(self, game, root_player) -> float:
-		"""
-		Play semi-smart moves until terminal state.
-		Return result from the root player's perspective:
-			win  -> 1.0
-			draw -> 0.5
-			loss -> 0.0
+                    child_node = MCTSNode(parent=node, move=move)
+                    node.children.append(child_node)
+                    node = child_node
 
-		IMPORTANT:
-		This rollout mutates the real game object temporarily,
-		then undoes all rollout moves before returning.
-		"""
-		rollout_move_count = 0
+            # 3. Simulation / Rollout
+            result = self.rollout(game, root_player)
 
-		while not game.is_terminal():
-			current_player = game.current_player
-			opponent = self.get_opponent(current_player)
-			legal_moves = game.get_legal_moves()
+            # 4. Backpropagation
+            node.backpropagate(result)
 
-			# 1. If current player can win now, do it
-			move = self.find_immediate_win(game, current_player)
-			if move is not None:
-				game.make_move(move)
-				rollout_move_count += 1
-				continue
+            # Undo selection + expansion moves
+            for _ in range(len(path_moves)):
+                game.undo_move()
 
-			# 2. If opponent can win next turn, block it
-			move = self.find_immediate_win(game, opponent)
-			if move is not None and move in legal_moves:
-				game.make_move(move)
-				rollout_move_count += 1
-				continue
+        self.moves_chosen += 1
+        self.total_simulations += sims_this_move
+        self.simulations_per_move.append(sims_this_move)
+        self.root_children_counts.append(len(root.children))
 
-			# 3. Prefer center columns if available
-			center_moves = [m for m in self.center_order if m in legal_moves]
-			move = random.choice(center_moves[:3]) if len(center_moves) >= 3 else random.choice(center_moves)
+        # Choose the child with the most visits
+        best_child = max(root.children, key=lambda child: child.visits)
 
-			game.make_move(move)
-			rollout_move_count += 1
+        self.chosen_move_visits.append(best_child.visits)
+        self.chosen_move_avg_values.append(
+            best_child.value / best_child.visits if best_child.visits > 0 else 0.0
+        )
 
-		# Read terminal result before undoing
-		if game.winner is None:
-			result = 0.5
-		elif game.winner == root_player:
-			result = 1.0
-		else:
-			result = 0.0
+        return best_child.move
 
-		# Undo rollout moves
-		for _ in range(rollout_move_count):
-			game.undo_move()
+    def rollout(self, game, root_player) -> float:
+        """
+        Play semi-smart moves until terminal state.
+        Return result from the root player's perspective:
+            win  -> 1.0
+            draw -> 0.5
+            loss -> 0.0
+        """
+        rollout_move_count = 0
 
-		return result
+        while not game.is_terminal():
+            current_player = game.current_player
+            opponent = self.get_opponent(current_player)
+            legal_moves = game.get_legal_moves()
 
-	def find_immediate_win(self, game, player):
-		"""
-		Return a move that lets 'player' win immediately, if one exists.
-		Otherwise return None.
+            # 1. If current player can win now, do it
+            move = self.find_immediate_win(game, current_player)
+            if move is not None:
+                game.make_move(move)
+                rollout_move_count += 1
+                continue
 
-		This now uses make_move + undo_move instead of cloning.
-		"""
-		legal_moves = game.get_legal_moves()
-		original_player = game.current_player
+            # 2. If opponent can win next turn, block it
+            move = self.find_immediate_win(game, opponent)
+            if move is not None and move in legal_moves:
+                game.make_move(move)
+                rollout_move_count += 1
+                continue
 
-		for move in self.center_order:
-			if move not in legal_moves:
-				continue
+            # 3. Prefer center columns if available
+            center_moves = [m for m in self.center_order if m in legal_moves]
+            move = (
+                random.choice(center_moves[:3])
+                if len(center_moves) >= 3
+                else random.choice(center_moves)
+            )
 
-			# Temporarily force the player whose win we want to test
-			game.current_player = player
-			game.make_move(move)
+            game.make_move(move)
+            rollout_move_count += 1
 
-			is_win = game.winner == player
+        # Read terminal result before undoing
+        if game.winner is None:
+            result = 0.5
+        elif game.winner == root_player:
+            result = 1.0
+        else:
+            result = 0.0
 
-			game.undo_move()
-			game.current_player = original_player
+        # Undo rollout moves
+        for _ in range(rollout_move_count):
+            game.undo_move()
 
-			if is_win:
-				return move
+        self.total_rollout_moves += rollout_move_count
+        self.rollout_lengths.append(rollout_move_count)
 
-		return None
+        return result
 
-	def initialize_untried_moves(self, node, game):
-		"""
-		Lazily initialize untried moves for a node based on the CURRENT
-		game state reached during tree traversal.
-		"""
-		if node.untried_moves is None:
-			legal_moves = game.get_legal_moves()
-			node.untried_moves = [m for m in self.center_order if m in legal_moves]
+    def find_immediate_win(self, game, player):
+        """
+        Return a move that lets 'player' win immediately, if one exists.
+        Otherwise return None.
 
-	def get_opponent(self, player):
-		return 2 if player == 1 else 1
+        This now uses make_move + undo_move instead of cloning.
+        """
+        legal_moves = game.get_legal_moves()
+        original_player = game.current_player
+
+        for move in self.center_order:
+            if move not in legal_moves:
+                continue
+
+            # Temporarily force the player whose win we want to test
+            game.current_player = player
+            game.make_move(move)
+
+            is_win = game.winner == player
+
+            game.undo_move()
+            game.current_player = original_player
+
+            if is_win:
+                return move
+
+        return None
+
+    def initialize_untried_moves(self, node, game):
+        """
+        Lazily initialize untried moves for a node based on the CURRENT
+        game state reached during tree traversal.
+        """
+        if node.untried_moves is None:
+            legal_moves = game.get_legal_moves()
+            node.untried_moves = [m for m in self.center_order if m in legal_moves]
+
+    def get_opponent(self, player):
+        return 2 if player == 1 else 1
+
+    def get_stats(self) -> dict:
+        return {
+            "Decisions": {
+                "Moves chosen": self.moves_chosen,
+                "Total search calls": self.total_search_calls,
+            },
+            "Search": {
+                "Total simulations": self.total_simulations,
+                "Avg simulations per move": (
+                    sum(self.simulations_per_move) / len(self.simulations_per_move)
+                    if self.simulations_per_move else 0.0
+                ),
+                "Avg root children": (
+                    sum(self.root_children_counts) / len(self.root_children_counts)
+                    if self.root_children_counts else 0.0
+                ),
+            },
+            "Rollouts": {
+                "Total rollout moves": self.total_rollout_moves,
+                "Avg rollout length": (
+                    sum(self.rollout_lengths) / len(self.rollout_lengths)
+                    if self.rollout_lengths else 0.0
+                ),
+                "Max rollout length": (
+                    max(self.rollout_lengths) if self.rollout_lengths else 0
+                ),
+            },
+            "Tactics": {
+                "Immediate win hits": self.immediate_win_hits,
+                "Immediate block hits": self.immediate_block_hits,
+            },
+            "Chosen Move Quality": {
+                "Avg chosen move visits": (
+                    sum(self.chosen_move_visits) / len(self.chosen_move_visits)
+                    if self.chosen_move_visits else 0.0
+                ),
+                "Avg chosen move value": (
+                    sum(self.chosen_move_avg_values) / len(self.chosen_move_avg_values)
+                    if self.chosen_move_avg_values else 0.0
+                ),
+            },
+        }

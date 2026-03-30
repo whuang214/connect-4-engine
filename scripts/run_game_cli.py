@@ -38,6 +38,7 @@ def play_game(agent1, agent2, render=True):
 
 if __name__ == "__main__":
     mcts_agent = MCTSAgent("MCTSAI", iterations=10000)
-    human_agent = HumanAgent("Human")
+    mcts_agent2 = MCTSAgent("MCTSAI2", iterations=10000)
+    # human_agent = HumanAgent("Human")
 
-    play_game(mcts_agent, human_agent)
+    play_game(mcts_agent, mcts_agent2)
