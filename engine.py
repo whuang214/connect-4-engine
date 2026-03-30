@@ -20,6 +20,7 @@ class MoveHistory:
     row: int
     col: int
     player: int
+    previous_current_player: int
     previous_winner: Optional[int]
     previous_done: bool
     previous_last_move: Optional[Tuple[int, int]]
@@ -95,12 +96,13 @@ class Connect4:
         row = self._get_drop_row(col)
         played_by = self.current_player
 
-        # Save state so we can undo later
+        # Save full previous state so undo_move can restore it exactly
         self.move_history.append(
             MoveHistory(
                 row=row,
                 col=col,
                 player=played_by,
+                previous_current_player=self.current_player,
                 previous_winner=self.winner,
                 previous_done=self.done,
                 previous_last_move=self.last_move,
@@ -160,8 +162,8 @@ class Connect4:
         # Remove the piece from the board
         self.board[last.row][last.col] = self.EMPTY
 
-        # Restore game state
-        self.current_player = last.player
+        # Restore full previous state
+        self.current_player = last.previous_current_player
         self.winner = last.previous_winner
         self.done = last.previous_done
         self.last_move = last.previous_last_move

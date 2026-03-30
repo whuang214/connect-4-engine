@@ -4,19 +4,18 @@ from agents.base_agent import BaseAgent
 
 
 class MCTSNode:
-	def __init__(self, game, parent=None, move=None):
-		self.game = game
+	def __init__(self, parent=None, move=None):
 		self.parent = parent
 		self.move = move  # move that led to this node
 
 		self.children = []
-		self.untried_moves = game.get_legal_moves()
+		self.untried_moves = None  # filled in when node is first visited
 
 		self.visits = 0
 		self.value = 0.0  # accumulated value from root player's perspective
 
 	def is_fully_expanded(self):
-		return len(self.untried_moves) == 0
+		return self.untried_moves is not None and len(self.untried_moves) == 0
 
 	def best_child(self, exploration_weight=1.414):
 		"""
@@ -26,13 +25,15 @@ class MCTSNode:
 		best_score = float("-inf")
 		best_node = None
 
+		log_parent_visits = math.log(self.visits)
+
 		for child in self.children:
 			if child.visits == 0:
 				score = float("inf")
 			else:
 				exploitation = child.value / child.visits
 				exploration = exploration_weight * math.sqrt(
-					math.log(self.visits) / child.visits
+					log_parent_visits / child.visits
 				)
 				score = exploitation + exploration
 
@@ -42,31 +43,16 @@ class MCTSNode:
 
 		return best_node
 
-	def expand(self):
-		"""
-		Take one untried move, create a new child node from it.
-		"""
-		move = random.choice(self.untried_moves)
-		self.untried_moves.remove(move)
-
-		next_game = self.game.clone()
-		next_game.make_move(move)
-
-		child_node = MCTSNode(game=next_game, parent=self, move=move)
-		self.children.append(child_node)
-
-		return child_node
-
 	def backpropagate(self, result):
 		"""
 		result should be from the root player's perspective:
 		win = 1.0, draw = 0.5, loss = 0.0
 		"""
-		self.visits += 1
-		self.value += result
-
-		if self.parent is not None:
-			self.parent.backpropagate(result)
+		node = self
+		while node is not None:
+			node.visits += 1
+			node.value += result
+			node = node.parent
 
 
 class MCTSAgent(BaseAgent):
@@ -100,24 +86,48 @@ class MCTSAgent(BaseAgent):
 			return block_move
 
 		root_player = game.current_player
-		root = MCTSNode(game=game.clone())
+		root = MCTSNode()
 
 		for _ in range(self.iterations):
 			node = root
+			path_moves = []
 
 			# 1. Selection
-			while not node.game.is_terminal() and node.is_fully_expanded():
+			while not game.is_terminal():
+				self.initialize_untried_moves(node, game)
+
+				if not node.is_fully_expanded():
+					break
+
+				if not node.children:
+					break
+
 				node = node.best_child(self.exploration_weight)
+				game.make_move(node.move)
+				path_moves.append(node.move)
 
 			# 2. Expansion
-			if not node.game.is_terminal() and not node.is_fully_expanded():
-				node = node.expand()
+			if not game.is_terminal():
+				self.initialize_untried_moves(node, game)
+
+				if node.untried_moves:
+					move = node.untried_moves.pop(0)  # center-prioritized
+					game.make_move(move)
+					path_moves.append(move)
+
+					child_node = MCTSNode(parent=node, move=move)
+					node.children.append(child_node)
+					node = child_node
 
 			# 3. Simulation / Rollout
-			result = self.rollout(node.game.clone(), root_player)
+			result = self.rollout(game, root_player)
 
 			# 4. Backpropagation
 			node.backpropagate(result)
+
+			# Undo selection + expansion moves
+			for _ in range(len(path_moves)):
+				game.undo_move()
 
 		# Choose the child with the most visits
 		best_child = max(root.children, key=lambda child: child.visits)
@@ -130,7 +140,13 @@ class MCTSAgent(BaseAgent):
 			win  -> 1.0
 			draw -> 0.5
 			loss -> 0.0
+
+		IMPORTANT:
+		This rollout mutates the real game object temporarily,
+		then undoes all rollout moves before returning.
 		"""
+		rollout_move_count = 0
+
 		while not game.is_terminal():
 			current_player = game.current_player
 			opponent = self.get_opponent(current_player)
@@ -140,12 +156,14 @@ class MCTSAgent(BaseAgent):
 			move = self.find_immediate_win(game, current_player)
 			if move is not None:
 				game.make_move(move)
+				rollout_move_count += 1
 				continue
 
 			# 2. If opponent can win next turn, block it
 			move = self.find_immediate_win(game, opponent)
 			if move is not None and move in legal_moves:
 				game.make_move(move)
+				rollout_move_count += 1
 				continue
 
 			# 3. Prefer center columns if available
@@ -153,33 +171,58 @@ class MCTSAgent(BaseAgent):
 			move = random.choice(center_moves[:3]) if len(center_moves) >= 3 else random.choice(center_moves)
 
 			game.make_move(move)
+			rollout_move_count += 1
 
+		# Read terminal result before undoing
 		if game.winner is None:
-			return 0.5
+			result = 0.5
 		elif game.winner == root_player:
-			return 1.0
+			result = 1.0
 		else:
-			return 0.0
+			result = 0.0
+
+		# Undo rollout moves
+		for _ in range(rollout_move_count):
+			game.undo_move()
+
+		return result
 
 	def find_immediate_win(self, game, player):
 		"""
 		Return a move that lets 'player' win immediately, if one exists.
 		Otherwise return None.
+
+		This now uses make_move + undo_move instead of cloning.
 		"""
+		legal_moves = game.get_legal_moves()
+		original_player = game.current_player
+
 		for move in self.center_order:
-			if move not in game.get_legal_moves():
+			if move not in legal_moves:
 				continue
 
-			test_game = game.clone()
+			# Temporarily force the player whose win we want to test
+			game.current_player = player
+			game.make_move(move)
 
-			# Make sure the right player is making the move in the clone
-			test_game.current_player = player
-			test_game.make_move(move)
+			is_win = game.winner == player
 
-			if test_game.winner == player:
+			game.undo_move()
+			game.current_player = original_player
+
+			if is_win:
 				return move
 
 		return None
+
+	def initialize_untried_moves(self, node, game):
+		"""
+		Lazily initialize untried moves for a node based on the CURRENT
+		game state reached during tree traversal.
+		"""
+		if node.untried_moves is None:
+			legal_moves = game.get_legal_moves()
+			node.untried_moves = [m for m in self.center_order if m in legal_moves]
 
 	def get_opponent(self, player):
 		return 2 if player == 1 else 1
