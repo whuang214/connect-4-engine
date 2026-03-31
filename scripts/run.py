@@ -94,9 +94,10 @@ def create_agent(
             model_path=model_path,
         )
 
-        default_name = (
-            f"RL-{os.path.basename(os.path.dirname(resolved_model_path))}-{checkpoint}"
-        )
+        run_folder = os.path.basename(os.path.dirname(resolved_model_path))
+        # Strip leading 'rl_' if present to avoid 'RL-rl_...'
+        run_folder_clean = run_folder.removeprefix("rl_")
+        default_name = f"RL-{run_folder_clean}-{checkpoint}"
 
         return RLPolicyAgent(
             name=name or default_name,
