@@ -35,5 +35,5 @@
   "log_interval": 500,
   "mcts_iterations": 800,
   "minimax_depth": 5,
-  "device": "cpu"
+  "device": "cuda"
 }

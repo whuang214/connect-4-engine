@@ -8,10 +8,11 @@ from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
-from agents.rl_agent import RLAgent
+from agents.rl_policy_agent import RLPolicyAgent
 
 
-DEFAULT_RL_MODEL_PATH = "runs/run1/final_model.pt"
+DEFAULT_RL_MODEL = "run1"
+DEFAULT_RL_CHECKPOINT = "final"
 
 
 def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
@@ -29,27 +30,55 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
     return agent_type, iterations
 
 
-def resolve_rl_model_path(model_path: str | None) -> str:
+def resolve_rl_model_path(
+    model_name: str | None = None,
+    checkpoint: str = DEFAULT_RL_CHECKPOINT,
+    model_path: str | None = None,
+) -> str:
     """
-    Return the RL model path to use.
-    If no path is provided, fall back to the default final model path.
-    """
-    path = model_path or DEFAULT_RL_MODEL_PATH
+    Resolve the RL checkpoint file to load.
 
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"RL model file not found: '{path}'. "
-            f"Pass --model1/--model2 explicitly or place the model at "
-            f"'{DEFAULT_RL_MODEL_PATH}'."
+    Priority:
+    1. --model-path1 / --model-path2 as a full explicit .pt path
+    2. runs/<model_name>/<checkpoint>_model.pt
+    3. runs/run1/final_model.pt
+
+    Example:
+        --model1 rl_selfplay_20000 --checkpoint1 best
+        -> runs/rl_selfplay_20000/best_model.pt
+    """
+    if model_path is not None:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"RL model file not found: '{model_path}'."
+            )
+        return model_path
+
+    checkpoint = checkpoint.lower().strip()
+    if checkpoint not in {"best", "final"}:
+        raise ValueError(
+            f"Invalid checkpoint '{checkpoint}'. Use 'best' or 'final'."
         )
 
-    return path
+    model_name = model_name or DEFAULT_RL_MODEL
+    resolved_path = os.path.join("runs", model_name, f"{checkpoint}_model.pt")
+
+    if not os.path.exists(resolved_path):
+        raise FileNotFoundError(
+            f"RL model file not found: '{resolved_path}'. "
+            f"Use --model1/--model2 with a valid run folder name inside 'runs/', "
+            f"or pass --model-path1/--model-path2 with a full .pt path."
+        )
+
+    return resolved_path
 
 
 def create_agent(
     agent_type: str,
     name: str | None = None,
     iterations: int = 1000,
+    model_name: str | None = None,
+    checkpoint: str = DEFAULT_RL_CHECKPOINT,
     model_path: str | None = None,
 ):
     agent_type, iterations = parse_agent_config(agent_type, iterations)
@@ -71,11 +100,19 @@ def create_agent(
         )
 
     if agent_type == "rl":
-        resolved_model_path = resolve_rl_model_path(model_path)
-        return (
-            RLAgent(name=name, model_path=resolved_model_path)
-            if name
-            else RLAgent(model_path=resolved_model_path)
+        resolved_model_path = resolve_rl_model_path(
+            model_name=model_name,
+            checkpoint=checkpoint,
+            model_path=model_path,
+        )
+
+        default_name = (
+            f"RL-{os.path.basename(os.path.dirname(resolved_model_path))}-{checkpoint}"
+        )
+
+        return RLPolicyAgent(
+            name=name or default_name,
+            model_path=resolved_model_path,
         )
 
     raise ValueError(
@@ -119,8 +156,22 @@ def play_game(agent1, agent2, render: bool = True):
 
 
 def run_play_mode(args):
-    agent1 = create_agent(args.agent1, args.name1, args.iterations1, args.model1)
-    agent2 = create_agent(args.agent2, args.name2, args.iterations2, args.model2)
+    agent1 = create_agent(
+        args.agent1,
+        args.name1,
+        args.iterations1,
+        args.model1,
+        args.checkpoint1,
+        args.model_path1,
+    )
+    agent2 = create_agent(
+        args.agent2,
+        args.name2,
+        args.iterations2,
+        args.model2,
+        args.checkpoint2,
+        args.model_path2,
+    )
 
     print_run_header(
         mode="CLI Play",
@@ -133,16 +184,26 @@ def run_play_mode(args):
 
 
 def run_ui_mode(args):
-    from ui.game_ui import GameUI  # lazy import for pygame
+    from ui.game_ui import GameUI
 
     parsed_agent1_type, _ = parse_agent_config(args.agent1, args.iterations1)
     parsed_agent2_type, _ = parse_agent_config(args.agent2, args.iterations2)
 
     agent1 = None if parsed_agent1_type == "human" else create_agent(
-        args.agent1, args.name1, args.iterations1, args.model1
+        args.agent1,
+        args.name1,
+        args.iterations1,
+        args.model1,
+        args.checkpoint1,
+        args.model_path1,
     )
     agent2 = None if parsed_agent2_type == "human" else create_agent(
-        args.agent2, args.name2, args.iterations2, args.model2
+        args.agent2,
+        args.name2,
+        args.iterations2,
+        args.model2,
+        args.checkpoint2,
+        args.model_path2,
     )
 
     p1_name = "Human" if agent1 is None else agent1.name
@@ -158,8 +219,22 @@ def run_ui_mode(args):
 
 
 def run_eval_mode(args):
-    agent1 = create_agent(args.agent1, args.name1, args.iterations1, args.model1)
-    agent2 = create_agent(args.agent2, args.name2, args.iterations2, args.model2)
+    agent1 = create_agent(
+        args.agent1,
+        args.name1,
+        args.iterations1,
+        args.model1,
+        args.checkpoint1,
+        args.model_path1,
+    )
+    agent2 = create_agent(
+        args.agent2,
+        args.name2,
+        args.iterations2,
+        args.model2,
+        args.checkpoint2,
+        args.model_path2,
+    )
 
     print_run_header(
         mode="Evaluation",
@@ -183,13 +258,13 @@ def run_eval_mode(args):
 
     print_evaluation_summary(summary)
 
-    if hasattr(agent1, "print_stats"):
-        print(f"\n{agent1.name} stats:")
-        agent1.print_stats()
+    # if hasattr(agent1, "print_stats"):
+    #     print(f"\n{agent1.name} stats:")
+    #     agent1.print_stats()
 
-    if hasattr(agent2, "print_stats"):
-        print(f"\n{agent2.name} stats:")
-        agent2.print_stats()
+    # if hasattr(agent2, "print_stats"):
+    #     print(f"\n{agent2.name} stats:")
+    #     agent2.print_stats()
 
 
 def build_parser():
@@ -209,21 +284,35 @@ def build_parser():
         subparser.add_argument("--iterations1", type=int, default=1000)
         subparser.add_argument("--iterations2", type=int, default=1000)
 
-        # If agent is rl and no model path is passed, it will use:
-        # runs/run1/final_model.pt
+        # RL run folder names inside runs/
         subparser.add_argument("--model1", type=str, default=None)
         subparser.add_argument("--model2", type=str, default=None)
 
-    # CLI
+        # RL checkpoint selectors
+        subparser.add_argument(
+            "--checkpoint1",
+            type=str,
+            default=DEFAULT_RL_CHECKPOINT,
+            choices=["best", "final"],
+        )
+        subparser.add_argument(
+            "--checkpoint2",
+            type=str,
+            default=DEFAULT_RL_CHECKPOINT,
+            choices=["best", "final"],
+        )
+
+        # Optional direct path overrides to .pt files
+        subparser.add_argument("--model-path1", type=str, default=None)
+        subparser.add_argument("--model-path2", type=str, default=None)
+
     play_parser = subparsers.add_parser("play")
     add_agent_args(play_parser)
     play_parser.add_argument("--no-render", action="store_true")
 
-    # UI
     ui_parser = subparsers.add_parser("ui")
     add_agent_args(ui_parser)
 
-    # EVAL
     eval_parser = subparsers.add_parser("eval")
     add_agent_args(eval_parser)
     eval_parser.add_argument("--games", type=int, default=10)
