@@ -284,15 +284,21 @@ def evaluate_agents(
                     summary.agent1_as_p2_wins += 1
 
         if print_each_game:
+            MAX_NAME = 22 # for formatting
+
+            def fmt(name: str) -> str:
+                return name[:MAX_NAME].ljust(MAX_NAME)
+
             starter_name = p1_agent.name
+
             print(
-                f"Game {game_number}/{num_games} | "
-                f"P1: {p1_agent.name} vs P2: {p2_agent.name} | "
-                f"Starter: {starter_name} | "
-                f"Winner: {game_stats.winner_agent} | "
-                f"Moves: {game_stats.moves_played} | "
+                f"Game {game_number:>2}/{num_games:<2} | "
+                f"P1: {fmt(p1_agent.name)} vs P2: {fmt(p2_agent.name)} | "
+                f"Starter: {fmt(starter_name)} | "
+                f"Winner: {fmt(game_stats.winner_agent)} | "
+                f"Moves: {game_stats.moves_played:>2} | "
                 f"Duration: {game_stats.duration_seconds:.4f}s"
-            )
+    )
 
     summary.avg_game_length = _safe_mean(all_game_lengths)
     summary.min_game_length = min(all_game_lengths) if all_game_lengths else 0
