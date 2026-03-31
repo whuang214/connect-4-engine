@@ -18,7 +18,7 @@ import sys
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, List
+from typing import Any, List
 
 import numpy as np
 import torch
@@ -46,29 +46,36 @@ except Exception:
     MCTSAgent = None
 
 try:
-    from agents.minimax_agent import MinimaxAgent
+    from agents.minimax_agent import MinimaxAgent # type: ignore
 except Exception:
     MinimaxAgent = None
 
 
 # ---------------------------------------------------------------------------
-# Replay buffer
+# Replay buffer — circular numpy arrays for O(1) random access
 # ---------------------------------------------------------------------------
 
 class ReplayBuffer:
-    def __init__(self, capacity: int) -> None:
-        self.capacity = capacity
-        self.states:  Deque[np.ndarray] = deque(maxlen=capacity)
-        self.actions: Deque[int]        = deque(maxlen=capacity)
-        self.returns: Deque[float]      = deque(maxlen=capacity)
+    """Circular buffer backed by pre-allocated numpy arrays for O(1) random access."""
+
+    def __init__(self, capacity: int, state_shape: tuple = (4, 6, 7)) -> None:
+        self.capacity    = capacity
+        self._states     = np.zeros((capacity, *state_shape), dtype=np.float32)
+        self._actions    = np.zeros(capacity, dtype=np.int64)
+        self._returns    = np.zeros(capacity, dtype=np.float32)
+        self._write_ptr  = 0
+        self._size       = 0
 
     def __len__(self) -> int:
-        return len(self.states)
+        return self._size
 
     def add(self, state: np.ndarray, action: int, ret: float) -> None:
-        self.states.append(state.astype(np.float32, copy=False))
-        self.actions.append(int(action))
-        self.returns.append(float(ret))
+        i = self._write_ptr
+        self._states[i]  = state
+        self._actions[i] = action
+        self._returns[i] = ret
+        self._write_ptr  = (i + 1) % self.capacity
+        self._size       = min(self._size + 1, self.capacity)
 
     def add_batch(
         self,
@@ -77,26 +84,37 @@ class ReplayBuffer:
         returns: np.ndarray,
         augment_mirror: bool = True,
     ) -> None:
-        for i in range(len(actions)):
-            self.add(states[i], int(actions[i]), float(returns[i]))
-            if augment_mirror:
-                self.add(
-                    mirror_encoded_state(states[i]),
-                    mirror_action(int(actions[i])),
-                    float(returns[i]),
-                )
+        if augment_mirror:
+            mir_states  = np.stack([mirror_encoded_state(s) for s in states])
+            mir_actions = np.array([mirror_action(int(a)) for a in actions], dtype=np.int64)
+            states  = np.concatenate([states,  mir_states],  axis=0)
+            actions = np.concatenate([actions, mir_actions], axis=0)
+            returns = np.concatenate([returns, returns],     axis=0)
+
+        n = len(actions)
+        # Fast path: write contiguous block(s) into the circular buffer
+        start = self._write_ptr
+        if start + n <= self.capacity:
+            self._states [start:start + n] = states
+            self._actions[start:start + n] = actions
+            self._returns[start:start + n] = returns
+        else:
+            first = self.capacity - start
+            self._states [start:]  = states[:first]
+            self._actions[start:]  = actions[:first]
+            self._returns[start:]  = returns[:first]
+            rest = n - first
+            self._states [:rest]  = states[first:]
+            self._actions[:rest]  = actions[first:]
+            self._returns[:rest]  = returns[first:]
+        self._write_ptr = (start + n) % self.capacity
+        self._size      = min(self._size + n, self.capacity)
 
     def sample(self, batch_size: int, device: torch.device):
-        idx     = np.random.randint(0, len(self.states), size=batch_size)
-        states  = torch.tensor(
-            np.stack([self.states[i] for i in idx]), dtype=torch.float32, device=device
-        )
-        actions = torch.tensor(
-            [self.actions[i] for i in idx], dtype=torch.long, device=device
-        )
-        returns = torch.tensor(
-            [self.returns[i] for i in idx], dtype=torch.float32, device=device
-        ).unsqueeze(1)
+        idx     = np.random.randint(0, self._size, size=batch_size)
+        states  = torch.as_tensor(self._states[idx],  dtype=torch.float32, device=device)
+        actions = torch.as_tensor(self._actions[idx], dtype=torch.long,    device=device)
+        returns = torch.as_tensor(self._returns[idx], dtype=torch.float32, device=device).unsqueeze(1)
         return states, actions, returns
 
 
@@ -448,20 +466,54 @@ class EvalSummary:
     win_rate: float
 
 
-def evaluate_against(agent_under_test, opponent, num_games: int) -> EvalSummary:
+def evaluate_against(
+    agent_under_test,
+    opponent,
+    num_games: int,
+    debug: bool = False,
+    label: str = "",
+) -> EvalSummary:
     wins = losses = draws = 0
     for g in range(num_games):
         game       = Connect4()
         test_is_p1 = (g % 2 == 0)
-        while not game.done:
+        max_moves  = Connect4.ROWS * Connect4.COLS
+        move_count = 0
+
+        if debug:
+            tqdm.write(f"  [DEBUG] {label} game {g+1}/{num_games} starting")
+
+        while not game.done and move_count < max_moves:
+            move_count += 1
             is_test = (game.current_player == 1) == test_is_p1
-            action  = (agent_under_test.choose_action(game)
-                       if is_test else opponent.choose_action(game))
+
+            if debug:
+                agent_name = agent_under_test.name if is_test else opponent.name
+                t0 = time.perf_counter()
+
+            action = (agent_under_test.choose_action(game.clone())
+                      if is_test else opponent.choose_action(game.clone()))
+
+            if debug:
+                elapsed = time.perf_counter() - t0 # type: ignore
+                tqdm.write(
+                    f"    [DEBUG] {label} g{g+1} move {move_count:>2} "
+                    f"{agent_name} -> col {action} ({elapsed:.3f}s)" # type: ignore
+                )
+
             game.make_move(action)
+
+        if debug:
+            tqdm.write(
+                f"  [DEBUG] {label} game {g+1} done in {move_count} moves | "
+                f"winner={game.winner}"
+            )
+
         tp = 1 if test_is_p1 else 2
         if   game.winner == tp:   wins   += 1
         elif game.winner is None: draws  += 1
         else:                     losses += 1
+
     return EvalSummary(
         wins=wins, losses=losses, draws=draws,
         win_rate=wins / max(num_games, 1),
@@ -490,8 +542,12 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
         )
+        # FIX: T_max should count outer-loop iterations (episodes // n_envs),
+        # not raw episode count. Previously the cosine schedule never completed
+        # a single cycle, so LR stayed near its initial value the entire run.
+        n_outer_loops = max(args.episodes // args.n_envs, 1)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=max(args.episodes, 1), eta_min=args.min_lr
+            self.optimizer, T_max=n_outer_loops, eta_min=args.min_lr
         )
         self.buffer           = ReplayBuffer(args.buffer_size)
         self.checkpoint_pool: List[FrozenPolicyAgent] = []
@@ -526,6 +582,11 @@ class Trainer:
         self.model.load_state_dict(ckpt["model_state_dict"])
         if "optimizer_state_dict" in ckpt:
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if "scheduler_state_dict" in ckpt:
+            # NOTE: we intentionally do NOT restore the old scheduler state
+            # because T_max has been corrected. The new scheduler will pick up
+            # from the right position via start_episode in run().
+            pass
         if "episode"     in ckpt: self.start_episode = int(ckpt["episode"])
         if "best_metric" in ckpt: self.best_metric   = float(ckpt["best_metric"])
 
@@ -603,6 +664,7 @@ class Trainer:
         torch.save({
             "model_state_dict":     self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
             "episode":              ep,
             "best_metric":          self.best_metric,
             "config":               vars(self.args),
@@ -619,15 +681,26 @@ class Trainer:
 
         train_start   = time.time()
         episodes_done = self.start_episode
-        total_target  = self.start_episode + self.args.episodes
+        # --episodes is the TOTAL target, not additional episodes.
+        # Resuming from ep 300k with --episodes 1000000 runs to ep 1M, not 1.3M.
+        total_target  = self.args.episodes
+        remaining     = max(0, total_target - self.start_episode)
         n_envs        = self.args.n_envs
 
-        pbar = tqdm(total=self.args.episodes, desc="Training", ncols=120)
+        # Advance scheduler to match resumed position so cosine picks up
+        # from the right phase instead of restarting from step 0.
+        # Set last_epoch directly to avoid the "step() before optimizer.step()"
+        # warning that a loop of .step() calls would produce.
+        if self.start_episode > 0:
+            self.scheduler.last_epoch = self.start_episode // n_envs
+
+        pbar = tqdm(total=total_target, desc="Training", ncols=120, initial=self.start_episode)
 
         while episodes_done < total_target:
-            ep_idx   = episodes_done - self.start_episode
-            epsilon  = self.current_epsilon(ep_idx)
-            temp     = self.current_temperature(ep_idx)
+            # Use absolute episode count for schedule so resume continues
+            # from the correct epsilon/temperature, not reset to start values
+            epsilon  = self.current_epsilon(episodes_done)
+            temp     = self.current_temperature(episodes_done)
             opponent = self._pick_opponent(self.args.mode)
 
             if opponent is None:
@@ -690,14 +763,16 @@ class Trainer:
                     device=torch.device("cpu"),
                     small_network=self.args.small_network,
                 )
-                res_rand = evaluate_against(eval_agent, self.random_agent, self.args.eval_games)
-                res_rule = evaluate_against(eval_agent, self.rule_agent,   self.args.eval_games)
+                dbg = getattr(self.args, 'eval_debug', False)
+                res_rand = evaluate_against(eval_agent, self.random_agent, self.args.eval_games, debug=dbg, label="Random")
+                res_rule = evaluate_against(eval_agent, self.rule_agent,   self.args.eval_games, debug=dbg, label="Rule")
                 eval_mcts = eval_minimax = None
 
                 if MCTSAgent is not None:
                     try:
                         eval_mcts = evaluate_against(
-                            eval_agent, self.mcts_factory.create(), self.args.eval_games_small
+                            eval_agent, self.mcts_factory.create(), self.args.eval_games_small,
+                            debug=dbg, label="MCTS"
                         )
                     except Exception as e:
                         tqdm.write(f"MCTS eval skipped: {e}")
@@ -822,6 +897,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--log-interval",         type=int, default=2048)
     p.add_argument("--mcts-iterations",      type=int, default=200)
     p.add_argument("--minimax-depth",        type=int, default=5)
+
+    p.add_argument("--eval-debug", action="store_true", default=False,
+               help="Print per-move debug output during eval games")
+    
     return p.parse_args()
 
 

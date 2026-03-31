@@ -1,6 +1,11 @@
 import math
 import random
+from collections import deque
 from agents.base_agent import BaseAgent
+
+# Maximum number of per-move stat entries kept in memory.
+# Prevents unbounded growth during long tournament runs.
+_STAT_MAXLEN = 50_000
 
 
 class MCTSNode:
@@ -74,11 +79,12 @@ class MCTSAgent(BaseAgent):
         self.immediate_win_hits = 0
         self.immediate_block_hits = 0
 
-        self.simulations_per_move = []
-        self.rollout_lengths = []
-        self.root_children_counts = []
-        self.chosen_move_visits = []
-        self.chosen_move_win_rates = []
+        # FIX: use bounded deques so stats don't grow without limit
+        self.simulations_per_move   = deque(maxlen=_STAT_MAXLEN)
+        self.rollout_lengths        = deque(maxlen=_STAT_MAXLEN)
+        self.root_children_counts   = deque(maxlen=_STAT_MAXLEN)
+        self.chosen_move_visits     = deque(maxlen=_STAT_MAXLEN)
+        self.chosen_move_win_rates  = deque(maxlen=_STAT_MAXLEN)
 
         self.tree_reuse_hits = 0
         self.tree_rebuilds = 0
