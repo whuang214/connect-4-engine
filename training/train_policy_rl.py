@@ -4,7 +4,7 @@ Train a strong policy-value RL agent for Connect 4.
 Modes: selfplay | vs_mcts | vs_minimax | mixed_teachers
 
 Run from project root:
-    python -m training.train_policy_rl --mode selfplay --episodes 500000 --run-name rl_pure_selfplay --n-envs 512 --updates-per-batch 128
+    python -m training.train_policy_rl --mode selfplay --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
 """
 
 from __future__ import annotations
@@ -103,19 +103,16 @@ class ReplayBuffer:
 # ---------------------------------------------------------------------------
 # Frozen checkpoint opponent
 # FIX: store state_dict on CPU, move to device only at inference time.
-# This avoids accumulating N full model copies in GPU VRAM.
 # ---------------------------------------------------------------------------
 
 class FrozenPolicyAgent:
     def __init__(self, model: nn.Module, device: torch.device, name: str = "Frozen") -> None:
         self.name   = name
         self.device = device
-        # Store weights on CPU — zero persistent VRAM cost
         self.state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
-        self._model: nn.Module | None = None  # lazily loaded at inference time
+        self._model: nn.Module | None = None
 
     def _get_model(self, reference_model: nn.Module) -> nn.Module:
-        """Load weights into a temporary model on device for inference."""
         if self._model is None:
             self._model = copy.deepcopy(reference_model)
             self._model.load_state_dict({k: v.to(self.device) for k, v in self.state_dict.items()})
@@ -128,9 +125,7 @@ class FrozenPolicyAgent:
         if len(legal) == 1:
             return legal[0]
 
-        # Lazily build model if not yet loaded
         if self._model is None:
-            # Infer architecture from state_dict keys
             if any(k.startswith("features.") for k in self.state_dict):
                 m = PolicyValueNetSmall()
             else:
@@ -150,7 +145,6 @@ class FrozenPolicyAgent:
         return int(torch.argmax(logits + mask).item())
 
     def unload(self) -> None:
-        """Release GPU memory when this frozen agent is evicted from the pool."""
         if self._model is not None:
             del self._model
             self._model = None
@@ -158,7 +152,46 @@ class FrozenPolicyAgent:
 
 
 # ---------------------------------------------------------------------------
+# Tactical helper — vectorized immediate win/block detection on numpy boards
+# Used by selfplay to ensure training games are tactically sound at 1-ply.
+# ---------------------------------------------------------------------------
+
+def _find_tactical_move(
+    boards:  np.ndarray,   # (M, 6, 7) int8
+    heights: np.ndarray,   # (M, 7)    int8
+    players: np.ndarray,   # (M,)      int8
+) -> np.ndarray:
+    """
+    For each env, return the first immediate winning column for players[i]
+    in center-biased order, or -1 if none exists.
+    """
+    from training.vec_engine import _check_win_single
+    M            = len(players)
+    result       = np.full(M, -1, dtype=np.int64)
+    center_order = [3, 2, 4, 1, 5, 0, 6]
+
+    for i in range(M):
+        board  = boards[i]
+        player = int(players[i])
+        h      = heights[i]
+        for col in center_order:
+            if h[col] >= 6:
+                continue
+            row = 5 - int(h[col])
+            board[row, col] = player
+            win = _check_win_single(board, row, col, player)
+            board[row, col] = 0
+            if win:
+                result[i] = col
+                break
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Selfplay runner — FULLY BATCHED
+# Tactical override: win > block > network/epsilon move.
+# Ensures every training game is sound at 1-ply without any external teacher.
 # ---------------------------------------------------------------------------
 
 def play_selfplay_vectorized(
@@ -209,6 +242,26 @@ def play_selfplay_vectorized(
                 actions[local_i] = int(np.random.choice(legal_cols))
 
         actions_np = actions.cpu().numpy()
+
+        # -----------------------------------------------------------------
+        # Tactical override: immediate win > immediate block > network move
+        # The board state is recorded before the override so the network
+        # trains on its own representations. Only the executed move is
+        # corrected — no external teacher, just tactically sound games.
+        # -----------------------------------------------------------------
+        cur_players    = vec.current_player[active_idx]
+        opp_players    = (3 - cur_players).astype(np.int8)
+        boards_active  = vec.boards[active_idx].copy()
+        heights_active = vec._heights[active_idx]
+
+        win_moves   = _find_tactical_move(boards_active.copy(), heights_active, cur_players)
+        block_moves = _find_tactical_move(boards_active.copy(), heights_active, opp_players)
+
+        for local_i in range(len(active_idx)):
+            if win_moves[local_i] >= 0:
+                actions_np[local_i] = int(win_moves[local_i])
+            elif block_moves[local_i] >= 0:
+                actions_np[local_i] = int(block_moves[local_i])
 
         cp = vec.current_player[active_idx]
         for local_i, env_i in enumerate(active_idx):
@@ -489,7 +542,6 @@ class Trainer:
         return self.args.temperature_start + r * (self.args.temperature_end - self.args.temperature_start)
 
     def _pick_opponent(self, mode: str):
-        """Returns an opponent agent or None (None = pure network selfplay path)."""
         if mode == "selfplay":
             if self.checkpoint_pool and random.random() < 0.45:
                 return random.choice(self.checkpoint_pool[-self.args.max_checkpoint_pool:])
@@ -540,12 +592,10 @@ class Trainer:
     def maybe_snapshot(self, ep: int) -> None:
         if ep % self.args.snapshot_interval != 0:
             return
-        # FIX: FrozenPolicyAgent now stores weights on CPU, no VRAM cost
         self.checkpoint_pool.append(
             FrozenPolicyAgent(self.model, self.device, f"Frozen-{ep}")
         )
         if len(self.checkpoint_pool) > self.args.max_checkpoint_pool:
-            # FIX: explicitly unload evicted agent's GPU model before dropping
             evicted = self.checkpoint_pool.pop(0)
             evicted.unload()
 
@@ -608,8 +658,6 @@ class Trainer:
                     recent_ent.append(ent)
                 self.scheduler.step()
 
-            # FIX: snapshot uses a single pass over the range, not per-ep loop
-            # Only fire once per outer loop step — check the batch boundary
             if episodes_done % self.args.snapshot_interval < n_envs:
                 self.maybe_snapshot(episodes_done)
 
@@ -634,7 +682,6 @@ class Trainer:
                 )
 
             if ep_idx_now % self.args.eval_interval < n_envs:
-                # FIX: build eval agent on CPU to avoid allocating another GPU model copy
                 eval_model = copy.deepcopy(self.model).cpu()
                 eval_agent = RLPolicyAgent(
                     name="RL-Eval",
@@ -663,7 +710,6 @@ class Trainer:
                     except Exception as e:
                         tqdm.write(f"Minimax eval skipped: {e}")
 
-                # Explicitly free the eval model copy
                 del eval_model, eval_agent
                 torch.cuda.empty_cache()
 
@@ -744,10 +790,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip",    type=float, default=1.0)
 
-    p.add_argument("--batch-size",          type=int,   default=512)
-    p.add_argument("--buffer-size",         type=int,   default=500000)
+    p.add_argument("--batch-size",          type=int,   default=1024)
+    p.add_argument("--buffer-size",         type=int,   default=1000000)
     p.add_argument("--updates-per-episode", type=int,   default=2)
-    p.add_argument("--updates-per-batch",   type=int,   default=0,
+    p.add_argument("--updates-per-batch",   type=int,   default=256,
                    help="If >0, do exactly this many gradient steps per outer loop.")
 
     p.add_argument("--channels",      type=int,   default=128)
@@ -755,16 +801,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dropout",       type=float, default=0.10)
     p.add_argument("--small-network", action="store_true")
 
-    p.add_argument("--epsilon-start",              type=float, default=0.25)
-    p.add_argument("--epsilon-end",                type=float, default=0.02)
-    p.add_argument("--epsilon-decay-episodes",     type=int,   default=25000)
-    p.add_argument("--temperature-start",          type=float, default=1.25)
-    p.add_argument("--temperature-end",            type=float, default=0.15)
-    p.add_argument("--temperature-decay-episodes", type=int,   default=40000)
+    p.add_argument("--epsilon-start",              type=float, default=0.3)
+    p.add_argument("--epsilon-end",                type=float, default=0.05)
+    p.add_argument("--epsilon-decay-episodes",     type=int,   default=600000)
+    p.add_argument("--temperature-start",          type=float, default=2.0)
+    p.add_argument("--temperature-end",            type=float, default=0.3)
+    p.add_argument("--temperature-decay-episodes", type=int,   default=800000)
 
     p.add_argument("--policy-weight",  type=float, default=1.0)
     p.add_argument("--value-weight",   type=float, default=1.0)
-    p.add_argument("--entropy-weight", type=float, default=0.01)
+    p.add_argument("--entropy-weight", type=float, default=0.05)
     p.add_argument("--augment-mirror", action="store_true", default=True)
 
     p.add_argument("--snapshot-interval",    type=int, default=10000)
