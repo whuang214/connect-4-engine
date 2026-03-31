@@ -3,7 +3,7 @@ from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
-from agents.rl_agent import RLAgent
+from agents.rl_policy_agent import RLPolicyAgent  # FIX: was importing non-existent rl_agent.RLAgent
 
 
 def play_game(agent1, agent2, render=True):
@@ -13,12 +13,8 @@ def play_game(agent1, agent2, render=True):
         if render:
             game.render()
 
-        if game.current_player == 1:
-            current_agent = agent1
-        else:
-            current_agent = agent2
-
-        move = current_agent.choose_action(game)
+        current_agent = agent1 if game.current_player == 1 else agent2
+        move = current_agent.choose_action(game.clone())  # FIX: pass clone not live game
 
         print(f"{current_agent.name} chooses column {move}")
 
@@ -36,8 +32,7 @@ def play_game(agent1, agent2, render=True):
 
 
 if __name__ == "__main__":
-    mcts_agent = MCTSAgent("MCTSAI", iterations=10000)
+    mcts_agent  = MCTSAgent("MCTSAI",  iterations=10000)
     mcts_agent2 = MCTSAgent("MCTSAI2", iterations=10000)
-    # human_agent = HumanAgent("Human")
 
     play_game(mcts_agent, mcts_agent2)

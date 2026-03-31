@@ -43,31 +43,26 @@ class MCTSNode:
         return max(self.children, key=lambda child: child.uct_score(exploration_weight))
 
     def update(self, terminal_winner):
-        """
-        Update this node from the perspective of player_just_moved.
-        """
+        """Update this node from the perspective of player_just_moved."""
         self.visits += 1
 
         if terminal_winner is None:
             self.wins += 0.5
         elif terminal_winner == self.player_just_moved:
             self.wins += 1.0
-        else:
-            self.wins += 0.0
+        # else loss: += 0.0
 
 
 class MCTSAgent(BaseAgent):
     def __init__(self, name=None, iterations=2000, exploration_weight=1.414):
-        name = name or f"MCTS-{iterations}" # name is MCTS-{iterations} by default, but can be overridden by args
+        name = name or f"MCTS-{iterations}"
         super().__init__(name)
 
         self.iterations = iterations
         self.exploration_weight = exploration_weight
         self.center_order = [3, 2, 4, 1, 5, 0, 6]
 
-        # persistent root for tree reuse
         self.root = None
-
         self.reset_stats()
 
     def reset_stats(self) -> None:
@@ -85,11 +80,9 @@ class MCTSAgent(BaseAgent):
         self.chosen_move_visits = []
         self.chosen_move_win_rates = []
 
-        # reuse stats
         self.tree_reuse_hits = 0
         self.tree_rebuilds = 0
 
-        # clear saved tree when stats reset
         self.root = None
 
     def choose_action(self, game) -> int:
@@ -108,8 +101,6 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(1)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
-
-            # tree becomes unreliable if we skip search entirely
             self.root = None
             return legal_moves[0]
 
@@ -122,8 +113,6 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(0)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(1.0)
-
-            # safest simple behavior: clear tree on tactical shortcut
             self.root = None
             return winning_move
 
@@ -136,14 +125,10 @@ class MCTSAgent(BaseAgent):
             self.root_children_counts.append(0)
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
-
-            # safest simple behavior: clear tree on tactical shortcut
             self.root = None
             return block_move
 
-        # reuse or rebuild root
         root = self.sync_root_to_game(game)
-
         sims_this_move = 0
 
         for _ in range(self.iterations):
@@ -152,15 +137,12 @@ class MCTSAgent(BaseAgent):
             path = [root]
             applied_moves = []
 
-            # -----------------
             # 1. Selection
-            # -----------------
             while not game.is_terminal():
                 self.initialize_untried_moves(node, game)
 
                 if not node.is_fully_expanded():
                     break
-
                 if not node.children:
                     break
 
@@ -169,9 +151,7 @@ class MCTSAgent(BaseAgent):
                 applied_moves.append(node.move)
                 path.append(node)
 
-            # -----------------
             # 2. Expansion
-            # -----------------
             if not game.is_terminal():
                 self.initialize_untried_moves(node, game)
 
@@ -192,18 +172,13 @@ class MCTSAgent(BaseAgent):
                     node = child
                     path.append(node)
 
-            # -----------------
             # 3. Rollout
-            # -----------------
             terminal_winner = self.rollout(game)
 
-            # -----------------
             # 4. Backpropagation
-            # -----------------
             for visited_node in path:
                 visited_node.update(terminal_winner)
 
-            # Undo selection/expansion path
             for _ in range(len(applied_moves)):
                 game.undo_move()
 
@@ -214,15 +189,11 @@ class MCTSAgent(BaseAgent):
 
         if not root.children:
             fallback_moves = self.get_ordered_moves(game)
-            chosen_move = fallback_moves[0]
             self.chosen_move_visits.append(0)
             self.chosen_move_win_rates.append(0.0)
-
             self.root = None
-            return chosen_move
+            return fallback_moves[0]
 
-        # Final move choice:
-        # choose child with best empirical value for ROOT player
         best_child = max(
             root.children,
             key=lambda child: self.child_value_for_root(child, root_player),
@@ -233,20 +204,11 @@ class MCTSAgent(BaseAgent):
             self.child_value_for_root(best_child, root_player)
         )
 
-        # advance tree root to chosen move for reuse next turn
         best_child.parent = None
         self.root = best_child
-
         return best_child.move
 
     def rollout(self, game):
-        """
-        Safer rollout:
-        1. play immediate win if available
-        2. block opponent immediate win if needed
-        3. prefer safe moves that do not allow opponent immediate win
-        4. among safe moves, prefer center-biased order
-        """
         rollout_move_count = 0
 
         while not game.is_terminal():
@@ -262,59 +224,41 @@ class MCTSAgent(BaseAgent):
 
         self.total_rollout_moves += rollout_move_count
         self.rollout_lengths.append(rollout_move_count)
-
         return terminal_winner
 
     def choose_rollout_move(self, game, current_player) -> int:
         opponent = self.get_opponent(current_player)
         legal_moves = game.get_legal_moves()
 
-        # 1. Win now
         winning_move = self.find_immediate_win(game, current_player)
         if winning_move is not None:
             return winning_move
 
-        # 2. Block opponent win now
         block_move = self.find_immediate_win(game, opponent)
         if block_move is not None:
             return block_move
 
-        # 3. Safe moves: after we play, opponent should not have immediate win
         safe_moves = []
-
         for move in self.center_order:
             if move not in legal_moves:
                 continue
-
             game.make_move(move)
             opp_winning_reply = self.find_immediate_win(game, opponent)
             game.undo_move()
-
             if opp_winning_reply is None:
                 safe_moves.append(move)
 
         if safe_moves:
-            # small randomness to keep rollouts varied
             top_k = safe_moves[:3] if len(safe_moves) >= 3 else safe_moves
             return random.choice(top_k)
 
-        # 4. If all moves are dangerous, still prefer center ordering
         ordered_legal = [m for m in self.center_order if m in legal_moves]
         return random.choice(ordered_legal)
 
     def child_value_for_root(self, child: MCTSNode, root_player: int) -> float:
-        """
-        Convert child node stats into value from root player's perspective.
-        Since child.wins is from child.player_just_moved perspective:
-        - if child.player_just_moved == root_player, use wins/visits
-        - otherwise use 1 - wins/visits
-        Draws remain symmetric around 0.5
-        """
         if child.visits == 0:
             return 0.0
-
         raw = child.wins / child.visits
-
         if child.player_just_moved == root_player:
             return raw
         return 1.0 - raw
@@ -324,20 +268,13 @@ class MCTSAgent(BaseAgent):
             node.untried_moves = self.get_ordered_moves(game)
 
     def get_ordered_moves(self, game) -> list[int]:
-        """
-        Tactical move ordering:
-        1. immediate win
-        2. immediate block
-        3. safe center-biased moves
-        4. remaining moves in center-biased order
-        """
         current_player = game.current_player
         opponent = self.get_opponent(current_player)
         legal_moves = game.get_legal_moves()
 
-        winning_moves = []
+        winning_moves  = []
         blocking_moves = []
-        safe_moves = []
+        safe_moves     = []
         remaining_moves = []
 
         opp_immediate_win = self.find_immediate_win(game, opponent)
@@ -346,7 +283,6 @@ class MCTSAgent(BaseAgent):
             if move not in legal_moves:
                 continue
 
-            # immediate win for current player?
             game.make_move(move)
             current_wins = game.winner == current_player
             game.undo_move()
@@ -370,30 +306,40 @@ class MCTSAgent(BaseAgent):
 
         seen = set()
         ordered = []
-
         for group in (winning_moves, blocking_moves, safe_moves, remaining_moves):
             for move in group:
                 if move not in seen:
                     ordered.append(move)
                     seen.add(move)
-
         return ordered
 
-    def find_immediate_win(self, game, player):
+    def find_immediate_win(self, game, player) -> int | None:
+        """
+        Return a column that gives `player` an immediate win, or None.
+
+        FIX: previously mutated game.current_player directly, leaving it
+        corrupted if make_move raised an exception. Now uses a temporary
+        clone so the live game state is never touched.
+        """
         legal_moves = game.get_legal_moves()
-        original_player = game.current_player
 
         for move in self.center_order:
             if move not in legal_moves:
                 continue
 
-            game.current_player = player
-            game.make_move(move)
-
-            is_win = game.winner == player
-
-            game.undo_move()
-            game.current_player = original_player
+            # Clone only when we need to simulate as the other player.
+            # If it's already player's turn, use make_move/undo directly
+            # (faster — avoids deepcopy on the common path).
+            if game.current_player == player:
+                game.make_move(move)
+                is_win = game.winner == player
+                game.undo_move()
+            else:
+                # FIX: use a clone instead of mutating current_player
+                tmp = game.clone()
+                tmp.current_player = player
+                tmp.make_move(move)
+                is_win = tmp.winner == player
 
             if is_win:
                 return move
@@ -401,33 +347,19 @@ class MCTSAgent(BaseAgent):
         return None
 
     def get_state_key(self, game):
-        """
-        Hashable representation of the current game state.
-        Includes current_player because same board with different side to move
-        is a different search state.
-        """
         return (
             tuple(tuple(row) for row in game.board),
             game.current_player,
         )
 
     def sync_root_to_game(self, game):
-        """
-        Try to reuse the existing tree.
-        Cases:
-        1. No saved tree -> build fresh root
-        2. Saved root exactly matches current state -> reuse it
-        3. One of saved root's children matches current state -> promote child
-        4. Otherwise -> rebuild fresh root
-        """
         current_key = self.get_state_key(game)
         opponent = self.get_opponent(game.current_player)
 
         if self.root is None:
             self.tree_rebuilds += 1
             self.root = MCTSNode(
-                parent=None,
-                move=None,
+                parent=None, move=None,
                 player_just_moved=opponent,
                 state_key=current_key,
             )
@@ -446,8 +378,7 @@ class MCTSAgent(BaseAgent):
 
         self.tree_rebuilds += 1
         self.root = MCTSNode(
-            parent=None,
-            move=None,
+            parent=None, move=None,
             player_just_moved=opponent,
             state_key=current_key,
         )
