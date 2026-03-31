@@ -35,18 +35,6 @@ def resolve_rl_model_path(
     checkpoint: str = DEFAULT_RL_CHECKPOINT,
     model_path: str | None = None,
 ) -> str:
-    """
-    Resolve the RL checkpoint file to load.
-
-    Priority:
-    1. --model-path1 / --model-path2 as a full explicit .pt path
-    2. runs/<model_name>/<checkpoint>_model.pt
-    3. runs/run1/final_model.pt
-
-    Example:
-        --model1 rl_selfplay_20000 --checkpoint1 best
-        -> runs/rl_selfplay_20000/best_model.pt
-    """
     if model_path is not None:
         if not os.path.exists(model_path):
             raise FileNotFoundError(
@@ -139,7 +127,7 @@ def play_game(agent1, agent2, render: bool = True):
             game.render()
 
         current_agent = agent1 if game.current_player == 1 else agent2
-        move = current_agent.choose_action(game)
+        move = current_agent.choose_action(game.clone())  # FIX: pass clone not live game
 
         print(f"{current_agent.name} chooses column {move}")
         game.make_move(move)
@@ -157,26 +145,16 @@ def play_game(agent1, agent2, render: bool = True):
 
 def run_play_mode(args):
     agent1 = create_agent(
-        args.agent1,
-        args.name1,
-        args.iterations1,
-        args.model1,
-        args.checkpoint1,
-        args.model_path1,
+        args.agent1, args.name1, args.iterations1,
+        args.model1, args.checkpoint1, args.model_path1,
     )
     agent2 = create_agent(
-        args.agent2,
-        args.name2,
-        args.iterations2,
-        args.model2,
-        args.checkpoint2,
-        args.model_path2,
+        args.agent2, args.name2, args.iterations2,
+        args.model2, args.checkpoint2, args.model_path2,
     )
 
     print_run_header(
-        mode="CLI Play",
-        agent1=agent1,
-        agent2=agent2,
+        mode="CLI Play", agent1=agent1, agent2=agent2,
         extra=f"Render: {not args.no_render}",
     )
 
@@ -190,20 +168,12 @@ def run_ui_mode(args):
     parsed_agent2_type, _ = parse_agent_config(args.agent2, args.iterations2)
 
     agent1 = None if parsed_agent1_type == "human" else create_agent(
-        args.agent1,
-        args.name1,
-        args.iterations1,
-        args.model1,
-        args.checkpoint1,
-        args.model_path1,
+        args.agent1, args.name1, args.iterations1,
+        args.model1, args.checkpoint1, args.model_path1,
     )
     agent2 = None if parsed_agent2_type == "human" else create_agent(
-        args.agent2,
-        args.name2,
-        args.iterations2,
-        args.model2,
-        args.checkpoint2,
-        args.model_path2,
+        args.agent2, args.name2, args.iterations2,
+        args.model2, args.checkpoint2, args.model_path2,
     )
 
     p1_name = "Human" if agent1 is None else agent1.name
@@ -220,26 +190,16 @@ def run_ui_mode(args):
 
 def run_eval_mode(args):
     agent1 = create_agent(
-        args.agent1,
-        args.name1,
-        args.iterations1,
-        args.model1,
-        args.checkpoint1,
-        args.model_path1,
+        args.agent1, args.name1, args.iterations1,
+        args.model1, args.checkpoint1, args.model_path1,
     )
     agent2 = create_agent(
-        args.agent2,
-        args.name2,
-        args.iterations2,
-        args.model2,
-        args.checkpoint2,
-        args.model_path2,
+        args.agent2, args.name2, args.iterations2,
+        args.model2, args.checkpoint2, args.model_path2,
     )
 
     print_run_header(
-        mode="Evaluation",
-        agent1=agent1,
-        agent2=agent2,
+        mode="Evaluation", agent1=agent1, agent2=agent2,
         extra=(
             f"Games: {args.games} | Render: {args.render} | "
             f"PrintEachGame: {not args.no_print_each_game}"
@@ -258,14 +218,6 @@ def run_eval_mode(args):
 
     print_evaluation_summary(summary)
 
-    # if hasattr(agent1, "print_stats"):
-    #     print(f"\n{agent1.name} stats:")
-    #     agent1.print_stats()
-
-    # if hasattr(agent2, "print_stats"):
-    #     print(f"\n{agent2.name} stats:")
-    #     agent2.print_stats()
-
 
 def build_parser():
     parser = argparse.ArgumentParser(
@@ -277,32 +229,20 @@ def build_parser():
     def add_agent_args(subparser):
         subparser.add_argument("--agent1", type=str, default="human")
         subparser.add_argument("--agent2", type=str, default="mcts")
-
-        subparser.add_argument("--name1", type=str, default=None)
-        subparser.add_argument("--name2", type=str, default=None)
-
+        subparser.add_argument("--name1",  type=str, default=None)
+        subparser.add_argument("--name2",  type=str, default=None)
         subparser.add_argument("--iterations1", type=int, default=1000)
         subparser.add_argument("--iterations2", type=int, default=1000)
-
-        # RL run folder names inside runs/
         subparser.add_argument("--model1", type=str, default=None)
         subparser.add_argument("--model2", type=str, default=None)
-
-        # RL checkpoint selectors
         subparser.add_argument(
-            "--checkpoint1",
-            type=str,
-            default=DEFAULT_RL_CHECKPOINT,
+            "--checkpoint1", type=str, default=DEFAULT_RL_CHECKPOINT,
             choices=["best", "final"],
         )
         subparser.add_argument(
-            "--checkpoint2",
-            type=str,
-            default=DEFAULT_RL_CHECKPOINT,
+            "--checkpoint2", type=str, default=DEFAULT_RL_CHECKPOINT,
             choices=["best", "final"],
         )
-
-        # Optional direct path overrides to .pt files
         subparser.add_argument("--model-path1", type=str, default=None)
         subparser.add_argument("--model-path2", type=str, default=None)
 
@@ -315,10 +255,10 @@ def build_parser():
 
     eval_parser = subparsers.add_parser("eval")
     add_agent_args(eval_parser)
-    eval_parser.add_argument("--games", type=int, default=10)
-    eval_parser.add_argument("--render", action="store_true")
+    eval_parser.add_argument("--games",              type=int,  default=10)
+    eval_parser.add_argument("--render",             action="store_true")
     eval_parser.add_argument("--no-print-each-game", action="store_true")
-    eval_parser.add_argument("--print-moves", action="store_true")
+    eval_parser.add_argument("--print-moves",        action="store_true")
 
     return parser
 

@@ -59,12 +59,13 @@ class RLPolicyAgent(BaseAgent):
             if cfg.get("small_network", False):
                 model = PolicyValueNetSmall()
             else:
-                # If your PolicyValueNet supports custom args, use them.
-                # Otherwise just use PolicyValueNet()
+                # FIXED: use correct arg names matching PolicyValueNet.__init__
+                # (channels + num_blocks, not num_filters + num_res_blocks)
                 try:
                     model = PolicyValueNet(
-                        num_filters=cfg.get("num_filters", 128),
-                        num_res_blocks=cfg.get("num_res_blocks", 4),
+                        channels=cfg.get("channels", 128),
+                        num_blocks=cfg.get("num_blocks", 6),
+                        dropout=cfg.get("dropout", 0.1),
                     )
                 except TypeError:
                     model = PolicyValueNet()

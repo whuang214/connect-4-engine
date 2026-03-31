@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from statistics import mean
 from typing import Any, Dict, List, Optional
 
@@ -88,7 +88,8 @@ class EvaluationSummary:
             "avg_game_duration": self.avg_game_duration,
             "agent1_internal_stats": self.agent1_internal_stats,
             "agent2_internal_stats": self.agent2_internal_stats,
-            "game_results": self.game_results,
+            # FIX: convert GameStats dataclasses to dicts so to_dict() is JSON serializable
+            "game_results": [asdict(g) for g in self.game_results],
         }
 
 
@@ -124,11 +125,7 @@ def play_one_game(
         2: player2_agent,
     }
 
-    move_times = {
-        1: [],
-        2: [],
-    }
-
+    move_times = {1: [], 2: []}
     moves_played = 0
     game_start_time = time.perf_counter()
 
@@ -181,7 +178,6 @@ def play_one_game(
 
     move_count_p1 = len(move_times[1])
     move_count_p2 = len(move_times[2])
-
     total_move_time_p1 = sum(move_times[1])
     total_move_time_p2 = sum(move_times[2])
 
@@ -217,8 +213,6 @@ def evaluate_agents(
     Runs multiple games between two agents.
     Alternates which agent is Player 1 to reduce first-player bias.
     """
-
-    # Reset ONCE for the whole evaluation
     _reset_agent_stats_if_supported(agent1)
     _reset_agent_stats_if_supported(agent2)
 
@@ -284,25 +278,23 @@ def evaluate_agents(
                     summary.agent1_as_p2_wins += 1
 
         if print_each_game:
-            MAX_NAME = 15 # for formatting
+            MAX_NAME = 15
 
             def fmt(name: str) -> str:
                 return name[:MAX_NAME].ljust(MAX_NAME)
 
-            starter_name = p1_agent.name
-
             print(
                 f"Game {game_number:>2}/{num_games:<2} | "
                 f"P1: {fmt(p1_agent.name)} vs P2: {fmt(p2_agent.name)} | "
-                f"Starter: {fmt(starter_name)} | "
+                f"Starter: {fmt(p1_agent.name)} | "
                 f"Winner: {fmt(game_stats.winner_agent)} | "
                 f"Moves: {game_stats.moves_played:>2} | "
                 f"Duration: {game_stats.duration_seconds:.4f}s"
-    )
+            )
 
-    summary.avg_game_length = _safe_mean(all_game_lengths)
-    summary.min_game_length = min(all_game_lengths) if all_game_lengths else 0
-    summary.max_game_length = max(all_game_lengths) if all_game_lengths else 0
+    summary.avg_game_length  = _safe_mean(all_game_lengths)
+    summary.min_game_length  = min(all_game_lengths)  if all_game_lengths else 0
+    summary.max_game_length  = max(all_game_lengths)  if all_game_lengths else 0
     summary.avg_game_duration = _safe_mean(all_game_durations)
 
     summary.avg_move_time_agent1 = (
@@ -344,7 +336,7 @@ def print_evaluation_summary(summary: EvaluationSummary) -> None:
     total_games = summary.total_games
     agent1_win_rate = summary.agent1_wins / total_games if total_games else 0.0
     agent2_win_rate = summary.agent2_wins / total_games if total_games else 0.0
-    draw_rate = summary.draws / total_games if total_games else 0.0
+    draw_rate       = summary.draws       / total_games if total_games else 0.0
 
     print("\n" + "=" * 60)
     print("EVALUATION SUMMARY")
