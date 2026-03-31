@@ -284,7 +284,7 @@ def evaluate_agents(
                     summary.agent1_as_p2_wins += 1
 
         if print_each_game:
-            MAX_NAME = 22 # for formatting
+            MAX_NAME = 15 # for formatting
 
             def fmt(name: str) -> str:
                 return name[:MAX_NAME].ljust(MAX_NAME)
