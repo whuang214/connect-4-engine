@@ -1,10 +1,8 @@
 """
-Train a strong policy-value RL agent for Connect 4.
-
-Modes: selfplay | vs_mcts | vs_minimax | mixed_teachers
+Train a strong policy-value RL agent for Connect 4 via selfplay.
 
 Run from project root:
-    python -m training.train_policy_rl --mode selfplay --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
+    python -m training.train_policy_rl --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ import os
 import random
 import sys
 import time
-from collections import deque
 from dataclasses import dataclass
 from typing import Any, List
 
@@ -44,11 +41,6 @@ try:
     from agents.mcts_agent import MCTSAgent
 except Exception:
     MCTSAgent = None
-
-try:
-    from agents.minimax_agent import MinimaxAgent # type: ignore
-except Exception:
-    MinimaxAgent = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +84,6 @@ class ReplayBuffer:
             returns = np.concatenate([returns, returns],     axis=0)
 
         n = len(actions)
-        # Fast path: write contiguous block(s) into the circular buffer
         start = self._write_ptr
         if start + n <= self.capacity:
             self._states [start:start + n] = states
@@ -119,8 +110,7 @@ class ReplayBuffer:
 
 
 # ---------------------------------------------------------------------------
-# Frozen checkpoint opponent
-# FIX: store state_dict on CPU, move to device only at inference time.
+# Frozen checkpoint opponent for selfplay diversity
 # ---------------------------------------------------------------------------
 
 class FrozenPolicyAgent:
@@ -130,15 +120,8 @@ class FrozenPolicyAgent:
         self.state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         self._model: nn.Module | None = None
 
-    def _get_model(self, reference_model: nn.Module) -> nn.Module:
-        if self._model is None:
-            self._model = copy.deepcopy(reference_model)
-            self._model.load_state_dict({k: v.to(self.device) for k, v in self.state_dict.items()})
-            self._model.eval()
-        return self._model
-
     def choose_action(self, game: Connect4) -> int:
-        from models.policy_value_network import encode_board, PolicyValueNet
+        from models.policy_value_network import encode_board
         legal = game.get_legal_moves()
         if len(legal) == 1:
             return legal[0]
@@ -170,8 +153,7 @@ class FrozenPolicyAgent:
 
 
 # ---------------------------------------------------------------------------
-# Tactical helper — vectorized immediate win/block detection on numpy boards
-# Used by selfplay to ensure training games are tactically sound at 1-ply.
+# Tactical helper — immediate win/block detection on numpy boards
 # ---------------------------------------------------------------------------
 
 def _find_tactical_move(
@@ -179,10 +161,6 @@ def _find_tactical_move(
     heights: np.ndarray,   # (M, 7)    int8
     players: np.ndarray,   # (M,)      int8
 ) -> np.ndarray:
-    """
-    For each env, return the first immediate winning column for players[i]
-    in center-biased order, or -1 if none exists.
-    """
     from training.vec_engine import _check_win_single
     M            = len(players)
     result       = np.full(M, -1, dtype=np.int64)
@@ -209,7 +187,6 @@ def _find_tactical_move(
 # ---------------------------------------------------------------------------
 # Selfplay runner — FULLY BATCHED
 # Tactical override: win > block > network/epsilon move.
-# Ensures every training game is sound at 1-ply without any external teacher.
 # ---------------------------------------------------------------------------
 
 def play_selfplay_vectorized(
@@ -261,12 +238,7 @@ def play_selfplay_vectorized(
 
         actions_np = actions.cpu().numpy()
 
-        # -----------------------------------------------------------------
         # Tactical override: immediate win > immediate block > network move
-        # The board state is recorded before the override so the network
-        # trains on its own representations. Only the executed move is
-        # corrected — no external teacher, just tactically sound games.
-        # -----------------------------------------------------------------
         cur_players    = vec.current_player[active_idx]
         opp_players    = (3 - cur_players).astype(np.int8)
         boards_active  = vec.boards[active_idx].copy()
@@ -314,144 +286,6 @@ def play_selfplay_vectorized(
         np.array(all_actions, dtype=np.int64),
         np.array(all_returns, dtype=np.float32),
     )
-
-
-# ---------------------------------------------------------------------------
-# vs-opponent runner
-# ---------------------------------------------------------------------------
-
-def play_vs_opponent_vectorized(
-    model:          nn.Module,
-    device:         torch.device,
-    opponent:       Any,
-    n_envs:         int,
-    epsilon:        float,
-    temperature:    float,
-    augment_mirror: bool = True,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    model.eval()
-
-    vec       = VecConnect4(n_envs=n_envs)
-    vec.reset()
-    py_games  = [Connect4() for _ in range(n_envs)]
-
-    agent_player = np.where(
-        np.arange(n_envs) % 2 == 0,
-        np.int8(1), np.int8(2)
-    )
-
-    ep_states:  List[List[np.ndarray]] = [[] for _ in range(n_envs)]
-    ep_actions: List[List[int]]        = [[] for _ in range(n_envs)]
-
-    while not vec.done.all():
-
-        agent_mask  = (~vec.done) & (vec.current_player == agent_player)
-        agent_idx   = np.where(agent_mask)[0]
-
-        if len(agent_idx) > 0:
-            states_np = vec.encode(agent_mask)
-            states_t  = torch.tensor(states_np, dtype=torch.float32, device=device)
-            with torch.no_grad():
-                logits_t, _ = model(states_t)
-
-            legal_np = vec.get_legal_moves_batch()[agent_mask]
-            logits_t[~torch.tensor(legal_np, device=device)] = -1e9
-
-            if epsilon > 0.0:
-                rand_mask = torch.rand(len(agent_idx), device=device) < epsilon
-            else:
-                rand_mask = torch.zeros(len(agent_idx), dtype=torch.bool, device=device)
-
-            if temperature > 0:
-                probs   = torch.softmax(logits_t / temperature, dim=1)
-                actions = torch.multinomial(probs, 1).squeeze(1)
-            else:
-                actions = torch.argmax(logits_t, dim=1)
-
-            if rand_mask.any():
-                for local_i in torch.where(rand_mask)[0].cpu().numpy():
-                    legal_cols = np.where(legal_np[local_i])[0]
-                    actions[local_i] = int(np.random.choice(legal_cols))
-
-            actions_np = actions.cpu().numpy()
-
-            for local_i, env_i in enumerate(agent_idx):
-                ep_states [env_i].append(states_np[local_i])
-                ep_actions[env_i].append(int(actions_np[local_i]))
-
-            full_actions             = np.zeros(n_envs, dtype=np.int64)
-            full_actions[agent_mask] = actions_np
-            vec.step(full_actions)
-
-            for local_i, env_i in enumerate(agent_idx):
-                if not py_games[env_i].done:
-                    py_games[env_i].make_move(int(actions_np[local_i]))
-
-        opp_mask = (~vec.done) & (vec.current_player != agent_player)
-        opp_idx  = np.where(opp_mask)[0]
-
-        if len(opp_idx) > 0:
-            opp_actions = np.zeros(n_envs, dtype=np.int64)
-            for env_i in opp_idx:
-                if py_games[env_i].done:
-                    continue
-                action = opponent.choose_action(py_games[env_i])
-                opp_actions[env_i] = action
-                py_games[env_i].make_move(action)
-            vec.step(opp_actions)
-
-    rewards = vec.get_rewards(agent_player)
-
-    all_states:  List[np.ndarray] = []
-    all_actions: List[int]        = []
-    all_returns: List[float]      = []
-
-    for env_i in range(n_envs):
-        r = float(rewards[env_i])
-        for s, a in zip(ep_states[env_i], ep_actions[env_i]):
-            all_states.append(s)
-            all_actions.append(a)
-            all_returns.append(r)
-            if augment_mirror:
-                all_states.append(mirror_encoded_state(s))
-                all_actions.append(mirror_action(a))
-                all_returns.append(r)
-
-    return (
-        np.stack(all_states,  axis=0).astype(np.float32),
-        np.array(all_actions, dtype=np.int64),
-        np.array(all_returns, dtype=np.float32),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Factories
-# ---------------------------------------------------------------------------
-
-class MinimaxFactory:
-    def __init__(self, depth: int) -> None:
-        self.depth = depth
-
-    def create(self):
-        if MinimaxAgent is None:
-            raise RuntimeError("MinimaxAgent import failed.")
-        try:
-            return MinimaxAgent(name=f"Minimax-{self.depth}", depth=self.depth)
-        except TypeError:
-            return MinimaxAgent(depth=self.depth)
-
-
-class MCTSFactory:
-    def __init__(self, iterations: int) -> None:
-        self.iterations = iterations
-
-    def create(self):
-        if MCTSAgent is None:
-            raise RuntimeError("MCTSAgent import failed.")
-        try:
-            return MCTSAgent(name=f"MCTS-{self.iterations}", iterations=self.iterations)
-        except TypeError:
-            return MCTSAgent(iterations=self.iterations)
 
 
 # ---------------------------------------------------------------------------
@@ -542,9 +376,6 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
         )
-        # FIX: T_max should count outer-loop iterations (episodes // n_envs),
-        # not raw episode count. Previously the cosine schedule never completed
-        # a single cycle, so LR stayed near its initial value the entire run.
         n_outer_loops = max(args.episodes // args.n_envs, 1)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=n_outer_loops, eta_min=args.min_lr
@@ -557,17 +388,13 @@ class Trainer:
         if args.resume:
             self._load_checkpoint(args.resume)
 
-        self.random_agent    = RandomAgent("Random")
-        self.rule_agent      = RuleBasedAgent("RuleBased")
-        self.minimax_factory = MinimaxFactory(args.minimax_depth)
-        self.mcts_factory    = MCTSFactory(args.mcts_iterations)
-        self._train_mcts     = self.mcts_factory.create()    if MCTSAgent    is not None else None
-        self._train_minimax  = self.minimax_factory.create() if MinimaxAgent is not None else None
+        self.random_agent = RandomAgent("Random")
+        self.rule_agent   = RuleBasedAgent("RuleBased")
 
         self.log: dict = {k: [] for k in [
             "episodes", "avg_loss", "policy_loss", "value_loss", "entropy",
             "epsilon", "temperature", "buffer_size", "lr",
-            "eval_vs_random", "eval_vs_rule", "eval_vs_mcts", "eval_vs_minimax",
+            "eval_vs_random", "eval_vs_rule", "eval_vs_mcts",
         ]}
         self._save_config()
 
@@ -582,11 +409,7 @@ class Trainer:
         self.model.load_state_dict(ckpt["model_state_dict"])
         if "optimizer_state_dict" in ckpt:
             self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-        if "scheduler_state_dict" in ckpt:
-            # NOTE: we intentionally do NOT restore the old scheduler state
-            # because T_max has been corrected. The new scheduler will pick up
-            # from the right position via start_episode in run().
-            pass
+        # Skip scheduler restore — T_max was corrected; resume via last_epoch in run()
         if "episode"     in ckpt: self.start_episode = int(ckpt["episode"])
         if "best_metric" in ckpt: self.best_metric   = float(ckpt["best_metric"])
 
@@ -602,33 +425,11 @@ class Trainer:
         r = ep_idx / max(self.args.temperature_decay_episodes, 1)
         return self.args.temperature_start + r * (self.args.temperature_end - self.args.temperature_start)
 
-    def _pick_opponent(self, mode: str):
-        if mode == "selfplay":
-            if self.checkpoint_pool and random.random() < 0.45:
-                return random.choice(self.checkpoint_pool[-self.args.max_checkpoint_pool:])
-            return None
-
-        r = random.random()
-        if mode == "vs_mcts":
-            if r < 0.70: return self._train_mcts
-            if r < 0.80: return self.rule_agent
-            if r < 0.85: return self.random_agent
-            if self.checkpoint_pool and r < 0.90: return self.checkpoint_pool[-1]
-            return None
-        if mode == "vs_minimax":
-            if r < 0.70: return self._train_minimax
-            if r < 0.80: return self.rule_agent
-            if r < 0.85: return self.random_agent
-            if self.checkpoint_pool and r < 0.90: return self.checkpoint_pool[-1]
-            return None
-        if mode == "mixed_teachers":
-            if r < 0.35: return self._train_mcts
-            if r < 0.70: return self._train_minimax
-            if r < 0.80: return self.rule_agent
-            if r < 0.85: return self.random_agent
-            if self.checkpoint_pool and r < 0.90: return self.checkpoint_pool[-1]
-            return None
-        raise ValueError(f"Unknown mode: {mode}")
+    def _pick_opponent(self):
+        """Selfplay: occasionally play against a frozen past checkpoint."""
+        if self.checkpoint_pool and random.random() < 0.45:
+            return random.choice(self.checkpoint_pool[-self.args.max_checkpoint_pool:])
+        return None
 
     def train_batch(self) -> tuple[float, float, float]:
         states, actions, returns = self.buffer.sample(self.args.batch_size, self.device)
@@ -673,7 +474,7 @@ class Trainer:
     def run(self) -> None:
         print(f"PyTorch {torch.__version__} | {self.device}")
         print(f"Params:  {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
-        print(f"n_envs:  {self.args.n_envs} | mode: {self.args.mode}")
+        print(f"n_envs:  {self.args.n_envs} | mode: selfplay")
 
         recent_pl:  List[float] = []
         recent_vl:  List[float] = []
@@ -681,38 +482,23 @@ class Trainer:
 
         train_start   = time.time()
         episodes_done = self.start_episode
-        # --episodes is the TOTAL target, not additional episodes.
-        # Resuming from ep 300k with --episodes 1000000 runs to ep 1M, not 1.3M.
         total_target  = self.args.episodes
-        remaining     = max(0, total_target - self.start_episode)
         n_envs        = self.args.n_envs
 
-        # Advance scheduler to match resumed position so cosine picks up
-        # from the right phase instead of restarting from step 0.
-        # Set last_epoch directly to avoid the "step() before optimizer.step()"
-        # warning that a loop of .step() calls would produce.
+        # Advance scheduler to match resumed position
         if self.start_episode > 0:
             self.scheduler.last_epoch = self.start_episode // n_envs
 
         pbar = tqdm(total=total_target, desc="Training", ncols=120, initial=self.start_episode)
 
         while episodes_done < total_target:
-            # Use absolute episode count for schedule so resume continues
-            # from the correct epsilon/temperature, not reset to start values
-            epsilon  = self.current_epsilon(episodes_done)
-            temp     = self.current_temperature(episodes_done)
-            opponent = self._pick_opponent(self.args.mode)
+            epsilon = self.current_epsilon(episodes_done)
+            temp    = self.current_temperature(episodes_done)
 
-            if opponent is None:
-                states, actions, returns = play_selfplay_vectorized(
-                    self.model, self.device, n_envs, epsilon, temp,
-                    augment_mirror=False,
-                )
-            else:
-                states, actions, returns = play_vs_opponent_vectorized(
-                    self.model, self.device, opponent, n_envs, epsilon, temp,
-                    augment_mirror=False,
-                )
+            states, actions, returns = play_selfplay_vectorized(
+                self.model, self.device, n_envs, epsilon, temp,
+                augment_mirror=False,
+            )
 
             self.buffer.add_batch(states, actions, returns,
                                   augment_mirror=self.args.augment_mirror)
@@ -766,24 +552,17 @@ class Trainer:
                 dbg = getattr(self.args, 'eval_debug', False)
                 res_rand = evaluate_against(eval_agent, self.random_agent, self.args.eval_games, debug=dbg, label="Random")
                 res_rule = evaluate_against(eval_agent, self.rule_agent,   self.args.eval_games, debug=dbg, label="Rule")
-                eval_mcts = eval_minimax = None
+                eval_mcts = None
 
                 if MCTSAgent is not None:
                     try:
+                        mcts_opp = MCTSAgent(name="MCTS-Eval", iterations=self.args.mcts_eval_iterations)
                         eval_mcts = evaluate_against(
-                            eval_agent, self.mcts_factory.create(), self.args.eval_games_small,
+                            eval_agent, mcts_opp, self.args.eval_games_small,
                             debug=dbg, label="MCTS"
                         )
                     except Exception as e:
                         tqdm.write(f"MCTS eval skipped: {e}")
-
-                if MinimaxAgent is not None:
-                    try:
-                        eval_minimax = evaluate_against(
-                            eval_agent, self.minimax_factory.create(), self.args.eval_games_small
-                        )
-                    except Exception as e:
-                        tqdm.write(f"Minimax eval skipped: {e}")
 
                 del eval_model, eval_agent
                 torch.cuda.empty_cache()
@@ -791,13 +570,12 @@ class Trainer:
                 tqdm.write(
                     f"Eval @ {episodes_done}: "
                     f"Random={res_rand.win_rate:.1%}  Rule={res_rule.win_rate:.1%}"
-                    + (f"  MCTS={eval_mcts.win_rate:.1%}"       if eval_mcts    else "")
-                    + (f"  Minimax={eval_minimax.win_rate:.1%}" if eval_minimax else "")
+                    + (f"  MCTS={eval_mcts.win_rate:.1%}" if eval_mcts else "")
                 )
 
                 score = res_rule.win_rate + 0.5 * res_rand.win_rate
-                if eval_mcts    is not None: score += 0.75 * eval_mcts.win_rate
-                if eval_minimax is not None: score += 0.75 * eval_minimax.win_rate
+                if eval_mcts is not None:
+                    score += 0.75 * eval_mcts.win_rate
 
                 if score > self.best_metric:
                     self.best_metric = score
@@ -819,8 +597,7 @@ class Trainer:
                     ("lr",             float(self.optimizer.param_groups[0]["lr"])),
                     ("eval_vs_random", float(res_rand.win_rate)),
                     ("eval_vs_rule",   float(res_rule.win_rate)),
-                    ("eval_vs_mcts",    None if eval_mcts    is None else float(eval_mcts.win_rate)),
-                    ("eval_vs_minimax", None if eval_minimax is None else float(eval_minimax.win_rate)),
+                    ("eval_vs_mcts",   None if eval_mcts is None else float(eval_mcts.win_rate)),
                 ]:
                     self.log[k].append(v)
 
@@ -849,26 +626,22 @@ class Trainer:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--mode",       type=str, default="selfplay",
-                   choices=["selfplay", "vs_mcts", "vs_minimax", "mixed_teachers"])
     p.add_argument("--episodes",   type=int, default=200000)
     p.add_argument("--run-name",   type=str, default="rl_policy")
     p.add_argument("--output-dir", type=str, default="runs")
     p.add_argument("--resume",     type=str, default=None)
     p.add_argument("--seed",       type=int, default=42)
-    p.add_argument("--n-envs",     type=int, default=512,
-                   help="Parallel games per step. Use 512-1024 for selfplay, "
-                        "64-128 for vs_mcts/vs_minimax (opponent is the bottleneck).")
+    p.add_argument("--n-envs",     type=int, default=512)
 
     p.add_argument("--lr",           type=float, default=3e-4)
     p.add_argument("--min-lr",       type=float, default=1e-5)
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip",    type=float, default=1.0)
 
-    p.add_argument("--batch-size",          type=int,   default=1024)
-    p.add_argument("--buffer-size",         type=int,   default=1000000)
-    p.add_argument("--updates-per-episode", type=int,   default=2)
-    p.add_argument("--updates-per-batch",   type=int,   default=256,
+    p.add_argument("--batch-size",          type=int, default=1024)
+    p.add_argument("--buffer-size",         type=int, default=1000000)
+    p.add_argument("--updates-per-episode", type=int, default=2)
+    p.add_argument("--updates-per-batch",   type=int, default=256,
                    help="If >0, do exactly this many gradient steps per outer loop.")
 
     p.add_argument("--channels",      type=int,   default=128)
@@ -895,12 +668,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--eval-games-small",     type=int, default=20)
     p.add_argument("--save-interval",        type=int, default=25000)
     p.add_argument("--log-interval",         type=int, default=2048)
-    p.add_argument("--mcts-iterations",      type=int, default=200)
-    p.add_argument("--minimax-depth",        type=int, default=5)
+    p.add_argument("--mcts-eval-iterations", type=int, default=200,
+                   help="MCTS iterations for evaluation opponent only.")
 
     p.add_argument("--eval-debug", action="store_true", default=False,
-               help="Print per-move debug output during eval games")
-    
+                   help="Print per-move debug output during eval games")
+
     return p.parse_args()
 
 
