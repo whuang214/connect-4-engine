@@ -98,7 +98,7 @@ def create_agent(
         )
 
     if agent_type == "minimax":
-        return MinimaxAgent(player=1, depth=iterations, name=name)
+        return MinimaxAgent(depth=iterations, name=name)
 
     if agent_type == "rl":
         resolved_model_path = resolve_rl_model_path(
