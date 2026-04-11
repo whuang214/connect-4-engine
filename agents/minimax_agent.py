@@ -35,7 +35,7 @@ class MinimaxAgent:
     WIN_SCORE  =  1_000_000
     LOSS_SCORE = -1_000_000
 
-    def __init__(self, player: int, depth: int = 5) -> None:
+    def __init__(self, player: int, depth: int = 5, name: str | None = None) -> None:
         self.player = player
         self.opponent = Connect4.PLAYER2 if player == Connect4.PLAYER1 else Connect4.PLAYER1
         self.depth = depth
