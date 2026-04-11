@@ -36,8 +36,6 @@ class MinimaxAgent:
     LOSS_SCORE = -1_000_000
 
     def __init__(self, player: int, depth: int = 5, name: str | None = None) -> None:
-        self.player = player
-        self.opponent = Connect4.PLAYER2 if player == Connect4.PLAYER1 else Connect4.PLAYER1
         self.depth = depth
         self.name = f"minimax-{depth}"
 
@@ -46,6 +44,8 @@ class MinimaxAgent:
     # ------------------------------------------------------------------
 
     def choose_action(self, game: Connect4) -> int:
+        self.player = game.current_player
+        self.opponent = Connect4.PLAYER2 if self.player == Connect4.PLAYER1 else Connect4.PLAYER1
         """
         Return the column index of the best move for this agent.
         Call this on the agent's turn with the live game object.
