@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import Optional
+from engine import Connect4
+
+
 """
 minimax_agent.py
 """
@@ -10,11 +16,6 @@ Thought process:
 - Add improvements/refinements based on evaluation
 
 """
-
-from __future__ import annotations
-
-from typing import Optional
-from engine import Connect4
 
 
 class MinimaxAgent:
