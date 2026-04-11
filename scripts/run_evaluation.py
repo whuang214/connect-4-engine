@@ -2,6 +2,7 @@ from engine import Connect4
 from agents.random_agent import RandomAgent
 from agents.mcts_agent import MCTSAgent
 from agents.rule_based_agent import RuleBasedAgent
+from agents.minimax_agent import MinimaxAgent
 from evaluation.evaluate import evaluate_agents, print_evaluation_summary
 
 
