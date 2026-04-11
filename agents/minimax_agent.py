@@ -17,7 +17,7 @@ from typing import Optional
 from engine import Connect4
 
 
-class Connect4Agent:
+class MinimaxAgent:
     """
     Minimax agent with alpha-beta pruning for Connect-4.
 
@@ -204,7 +204,7 @@ class Connect4Agent:
 
 if __name__ == "__main__":
     game  = Connect4()
-    agent = Connect4Agent(player=Connect4.PLAYER2, depth=5)
+    agent = MinimaxAgent(player=Connect4.PLAYER2, depth=5)
 
     game.render()
 
@@ -214,7 +214,7 @@ if __name__ == "__main__":
             col = int(input("Your move (0-6): "))
         else:
             # Agent move
-            col = agent.choose_move(game)
+            col = agent.choose_action(game)
             print(f"Agent plays column {col}")
 
         try:
