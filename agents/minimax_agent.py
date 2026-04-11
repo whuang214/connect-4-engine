@@ -14,7 +14,7 @@ Thought process:
 from __future__ import annotations
 
 from typing import Optional
-from engine import Connect4  # adjust import path as needed
+from engine import Connect4
 
 
 class Connect4Agent:
@@ -35,23 +35,24 @@ class Connect4Agent:
     LOSS_SCORE = -1_000_000
 
     def __init__(self, player: int, depth: int = 5) -> None:
-        self.player    = player
-        self.opponent  = Connect4.PLAYER2 if player == Connect4.PLAYER1 else Connect4.PLAYER1
-        self.depth     = depth
+        self.player = player
+        self.opponent = Connect4.PLAYER2 if player == Connect4.PLAYER1 else Connect4.PLAYER1
+        self.depth = depth
+        self.name = f"minimax-{depth}"
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def choose_move(self, game: Connect4) -> int:
+    def choose_action(self, game: Connect4) -> int:
         """
         Return the column index of the best move for this agent.
         Call this on the agent's turn with the live game object.
         """
-        best_col   = -1
+        best_col = -1
         best_score = float("-inf")
-        alpha      = float("-inf")
-        beta       = float("inf")
+        alpha = float("-inf")
+        beta = float("inf")
 
         for col in self._ordered_moves(game):
             game.make_move(col)
