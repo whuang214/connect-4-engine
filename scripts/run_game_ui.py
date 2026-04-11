@@ -3,6 +3,7 @@ from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
+from agents.minimax_agent import MinimaxAgent
 
 if __name__ == "__main__":
     # Human vs Random AI
