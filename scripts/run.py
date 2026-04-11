@@ -8,6 +8,7 @@ from agents.random_agent import RandomAgent
 from agents.human_agent import HumanAgent
 from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
+from agents.minimax_agent import MinimaxAgent
 from agents.rl_policy_agent import RLPolicyAgent
 
 
@@ -26,6 +27,15 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
                 f"Expected format like 'mcts-5000'."
             )
         return "mcts", int(value)
+
+    if agent_type.startswith("minimax-"):
+        _, value = agent_type.split("-", 1)
+        if not value.isdigit():
+            raise ValueError(
+                f"Invalid minimax agent format: '{agent_type}'. "
+                f"Expected format like 'minimax-5'."
+            )
+        return "minimax", int(value)
 
     return agent_type, iterations
 
@@ -87,6 +97,9 @@ def create_agent(
             else MCTSAgent(iterations=iterations)
         )
 
+    if agent_type == "minimax":
+        return MinimaxAgent(player=1, depth=iterations, name=name)
+
     if agent_type == "rl":
         resolved_model_path = resolve_rl_model_path(
             model_name=model_name,
@@ -106,7 +119,7 @@ def create_agent(
 
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
-        f"Use: human, random, rule, mcts, mcts-<iterations>, rl"
+        f"Use: human, random, rule, mcts, mcts-<iterations>, minimax, minimax-<depth>, rl"
     )
 
 
