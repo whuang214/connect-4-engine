@@ -24,18 +24,17 @@ class MinimaxAgent:
 
     Parameters
     ----------
-    player : int
-        The player this agent controls (Connect4.PLAYER1 or PLAYER2).
     depth : int
         Maximum search depth. Higher = stronger but slower.
         Recommended: 5–6 for a strong agent without extra optimizations.
+    name : str
     """
 
     # Scores for terminal states — must dominate all heuristic scores
     WIN_SCORE  =  1_000_000
     LOSS_SCORE = -1_000_000
 
-    def __init__(self, player: int, depth: int = 5, name: str | None = None) -> None:
+    def __init__(self, depth: int = 5, name: str | None = None) -> None:
         self.depth = depth
         self.name = f"minimax-{depth}"
 
