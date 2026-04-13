@@ -10,6 +10,7 @@ from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
 from agents.minimax_agent import MinimaxAgent
 from agents.rl_policy_agent import RLPolicyAgent
+from agents.Sohams_secret_agent import SohamsSecretAgent
 
 
 DEFAULT_RL_MODEL = "run1"
@@ -36,6 +37,15 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
                 f"Expected format like 'minimax-5'."
             )
         return "minimax", int(value)
+
+    if agent_type.startswith("secret-"):
+        _, value = agent_type.split("-", 1)
+        if not value.isdigit():
+            raise ValueError(
+                f"Invalid secret agent format: '{agent_type}'. "
+                f"Expected format like 'secret-800'."
+            )
+        return "secret", int(value)
 
     return agent_type, iterations
 
@@ -69,6 +79,30 @@ def resolve_rl_model_path(
         )
 
     return resolved_path
+
+
+def resolve_secret_model_path(model_path: str | None = None) -> str:
+    """Resolve the model path for SohamsSecretAgent."""
+    if model_path is not None:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"Secret agent model file not found: '{model_path}'."
+            )
+        return model_path
+
+    # Default: look for the main_run_v2 value network model
+    default_paths = [
+        "runs/main_run_v2/final_model.pt",
+        "runs/main_run/final_model.pt",
+    ]
+    for p in default_paths:
+        if os.path.exists(p):
+            return p
+
+    raise FileNotFoundError(
+        "No trained value network model found. "
+        "Pass --model-path1/--model-path2 with the path to final_model.pt"
+    )
 
 
 def create_agent(
@@ -108,7 +142,6 @@ def create_agent(
         )
 
         run_folder = os.path.basename(os.path.dirname(resolved_model_path))
-        # Strip leading 'rl_' if present to avoid 'RL-rl_...'
         run_folder_clean = run_folder.removeprefix("rl_")
         default_name = f"RL-{run_folder_clean}-{checkpoint}"
 
@@ -117,9 +150,20 @@ def create_agent(
             model_path=resolved_model_path,
         )
 
+    if agent_type == "secret":
+        resolved_model_path = resolve_secret_model_path(model_path=model_path)
+
+        return SohamsSecretAgent(
+            name=name or f"SohamsSecret-{iterations}",
+            model_path=resolved_model_path,
+            iterations=iterations,
+            small_network=True,
+        )
+
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
-        f"Use: human, random, rule, mcts, mcts-<iterations>, minimax, minimax-<depth>, rl"
+        f"Use: human, random, rule, mcts, mcts-<iterations>, "
+        f"minimax, minimax-<depth>, rl, secret, secret-<iterations>"
     )
 
 
@@ -141,7 +185,7 @@ def play_game(agent1, agent2, render: bool = True):
             game.render()
 
         current_agent = agent1 if game.current_player == 1 else agent2
-        move = current_agent.choose_action(game.clone())  # FIX: pass clone not live game
+        move = current_agent.choose_action(game.clone())
 
         print(f"{current_agent.name} chooses column {move}")
         game.make_move(move)
