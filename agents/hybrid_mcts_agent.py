@@ -12,7 +12,7 @@ Key differences from pure MCTS:
 - Evaluations are more accurate: network learned from 100k+ games
 - Fewer simulations needed for strong play
 
-This is essentially a simplified AlphaZero approach.
+This is essentially a simplified AlphaZero approach (Phase 2 prototype).
 """
 
 import math
@@ -58,10 +58,10 @@ class HybridNode:
         return max(self.children, key=lambda c: c.uct_score(exploration_weight))
 
 
-class SohamsSecretAgent(BaseAgent):
+class HybridMCTSAgent(BaseAgent):
     """
-    MCTS agent that uses a trained neural network for leaf evaluation
-    instead of random rollouts.
+    Hybrid MCTS agent that uses a trained neural network for leaf evaluation
+    instead of random rollouts (Phase 2 prototype).
 
     Parameters
     ----------
@@ -89,7 +89,7 @@ class SohamsSecretAgent(BaseAgent):
         small_network=True,
         device=None,
     ):
-        name = name or f"SohamsSecret-{iterations}"
+        name = name or f"HybridMCTS-{iterations}"
         super().__init__(name)
 
         self.iterations = iterations

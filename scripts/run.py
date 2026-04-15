@@ -10,7 +10,7 @@ from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
 from agents.minimax_agent import MinimaxAgent
 from agents.rl_policy_agent import RLPolicyAgent
-from agents.Sohams_secret_agent import SohamsSecretAgent
+from agents.hybrid_mcts_agent import HybridMCTSAgent
 
 
 DEFAULT_RL_MODEL = "run1"
@@ -38,14 +38,14 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
             )
         return "minimax", int(value)
 
-    if agent_type.startswith("secret-"):
+    if agent_type.startswith("hybrid-"):
         _, value = agent_type.split("-", 1)
         if not value.isdigit():
             raise ValueError(
-                f"Invalid secret agent format: '{agent_type}'. "
-                f"Expected format like 'secret-800'."
+                f"Invalid hybrid agent format: '{agent_type}'. "
+                f"Expected format like 'hybrid-800'."
             )
-        return "secret", int(value)
+        return "hybrid", int(value)
 
     return agent_type, iterations
 
@@ -81,12 +81,12 @@ def resolve_rl_model_path(
     return resolved_path
 
 
-def resolve_secret_model_path(model_path: str | None = None) -> str:
-    """Resolve the model path for SohamsSecretAgent."""
+def resolve_hybrid_model_path(model_path: str | None = None) -> str:
+    """Resolve the model path for HybridMCTSAgent."""
     if model_path is not None:
         if not os.path.exists(model_path):
             raise FileNotFoundError(
-                f"Secret agent model file not found: '{model_path}'."
+                f"Hybrid agent model file not found: '{model_path}'."
             )
         return model_path
 
@@ -150,11 +150,11 @@ def create_agent(
             model_path=resolved_model_path,
         )
 
-    if agent_type == "secret":
-        resolved_model_path = resolve_secret_model_path(model_path=model_path)
+    if agent_type == "hybrid":
+        resolved_model_path = resolve_hybrid_model_path(model_path=model_path)
 
-        return SohamsSecretAgent(
-            name=name or f"SohamsSecret-{iterations}",
+        return HybridMCTSAgent(
+            name=name or f"HybridMCTS-{iterations}",
             model_path=resolved_model_path,
             iterations=iterations,
             small_network=True,
@@ -163,7 +163,7 @@ def create_agent(
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
         f"Use: human, random, rule, mcts, mcts-<iterations>, "
-        f"minimax, minimax-<depth>, rl, secret, secret-<iterations>"
+        f"minimax, minimax-<depth>, rl, hybrid, hybrid-<iterations>"
     )
 
 
