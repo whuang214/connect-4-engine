@@ -13,7 +13,6 @@ python -m scripts.run <mode> [options]
 
 ```bash
 pip install -r requirements.txt
-pip install pygame  # required for UI mode
 ```
 
 Requires Python 3.10+ and PyTorch 2.0+.
