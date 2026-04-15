@@ -15,6 +15,8 @@ from agents.hybrid_mcts_agent import HybridMCTSAgent
 
 DEFAULT_RL_MODEL = "run1"
 DEFAULT_RL_CHECKPOINT = "final"
+DEFAULT_MCTS_ITERATIONS = 500
+DEFAULT_MINIMAX_DEPTH = 5
 
 
 def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
@@ -25,7 +27,7 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
         if not value.isdigit():
             raise ValueError(
                 f"Invalid MCTS agent format: '{agent_type}'. "
-                f"Expected format like 'mcts-5000'."
+                f"Expected format like 'mcts-500'."
             )
         return "mcts", int(value)
 
@@ -46,6 +48,12 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
                 f"Expected format like 'hybrid-800'."
             )
         return "hybrid", int(value)
+
+    # Bare agent names get their own defaults
+    if agent_type == "mcts":
+        return "mcts", DEFAULT_MCTS_ITERATIONS
+    if agent_type == "minimax":
+        return "minimax", DEFAULT_MINIMAX_DEPTH
 
     return agent_type, iterations
 
@@ -90,7 +98,6 @@ def resolve_hybrid_model_path(model_path: str | None = None) -> str:
             )
         return model_path
 
-    # Default: look for the main_run_v2 value network model
     default_paths = [
         "runs/main_run_v2/final_model.pt",
         "runs/main_run/final_model.pt",
@@ -108,7 +115,7 @@ def resolve_hybrid_model_path(model_path: str | None = None) -> str:
 def create_agent(
     agent_type: str,
     name: str | None = None,
-    iterations: int = 1000,
+    iterations: int = DEFAULT_MCTS_ITERATIONS,
     model_name: str | None = None,
     checkpoint: str = DEFAULT_RL_CHECKPOINT,
     model_path: str | None = None,
@@ -289,8 +296,8 @@ def build_parser():
         subparser.add_argument("--agent2", type=str, default="mcts")
         subparser.add_argument("--name1",  type=str, default=None)
         subparser.add_argument("--name2",  type=str, default=None)
-        subparser.add_argument("--iterations1", type=int, default=1000)
-        subparser.add_argument("--iterations2", type=int, default=1000)
+        subparser.add_argument("--iterations1", type=int, default=DEFAULT_MCTS_ITERATIONS)
+        subparser.add_argument("--iterations2", type=int, default=DEFAULT_MCTS_ITERATIONS)
         subparser.add_argument("--model1", type=str, default=None)
         subparser.add_argument("--model2", type=str, default=None)
         subparser.add_argument(
