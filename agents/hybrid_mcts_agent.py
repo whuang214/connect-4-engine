@@ -21,7 +21,7 @@ import torch
 import numpy as np
 
 from agents.base_agent import BaseAgent
-from models.value_network import ValueNetwork, ValueNetworkSmall, encode_board
+from models.policy_value_network import PolicyValueNet, PolicyValueNetSmall, encode_board
 
 
 class HybridNode:
@@ -114,7 +114,7 @@ class HybridMCTSAgent(BaseAgent):
         self.reset_stats()
 
     def _load_model(self, path, small_network):
-        model = ValueNetworkSmall() if small_network else ValueNetwork()
+        model = PolicyValueNetSmall() if small_network else PolicyValueNet()
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
             model.load_state_dict(checkpoint["model_state_dict"])
