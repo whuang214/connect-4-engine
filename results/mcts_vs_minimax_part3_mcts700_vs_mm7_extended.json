@@ -1,0 +1,31 @@
+{
+  "tournament_date": "2026-04-14T13:31:15.032771",
+  "total_matchups": 1,
+  "total_games": 50,
+  "total_duration_seconds": 5858.96,
+  "total_duration_hours": 1.63,
+  "results": [
+    {
+      "matchup_number": 1,
+      "category": "Core Head-to-Head",
+      "description": "MCTS-700 vs Minimax-7 (extended)",
+      "num_games": 50,
+      "duration_seconds": 5858.95,
+      "agent1_name": "MCTS-700",
+      "agent2_name": "minimax-7",
+      "agent1_wins": 30,
+      "agent2_wins": 14,
+      "draws": 6,
+      "agent1_win_rate": 0.6,
+      "agent2_win_rate": 0.28,
+      "draw_rate": 0.12,
+      "agent1_as_p1_wins": 14,
+      "agent1_as_p2_wins": 16,
+      "agent2_as_p1_wins": 4,
+      "agent2_as_p2_wins": 10,
+      "avg_game_length": 36,
+      "avg_move_time_agent1": 6.216632,
+      "avg_move_time_agent2": 0.259802
+    }
+  ]
+}
