@@ -9,6 +9,12 @@ Run everything from one entrypoint:
 python -m scripts.run <mode> [options]
 ```
 
+### Run Options
+
+- `--agent1`, `--agent2` → agent type (see "Agents" below)
+- `--name1`, `--name2` → custom display names
+- `--model1`, `--model2` → path to RL checkpoint (for `rl` agent)
+
 ## Setup
 
 ```bash
@@ -17,7 +23,7 @@ pip install -r requirements.txt
 
 Requires Python 3.10+ and PyTorch 2.0+.
 
-## Modes
+## Modes (examples)
 
 ### 🖥 UI (Graphical Game) — Recommended to Visualize
 
@@ -68,12 +74,6 @@ minimax-3    → Minimax at depth 3
 minimax-7    → Minimax at depth 7
 minimax-9    → Minimax at depth 9
 ```
-
-### Agent Options
-
-- `--agent1`, `--agent2` → agent type
-- `--name1`, `--name2` → custom display names
-- `--model1`, `--model2` → path to RL checkpoint
 
 ## Training the RL Agent
 
