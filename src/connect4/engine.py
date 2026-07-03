@@ -34,6 +34,8 @@ class Connect4:
     PLAYER1 = 1
     PLAYER2 = 2
 
+    SYMBOLS = {EMPTY: ".", PLAYER1: "X", PLAYER2: "O"}
+
     def __init__(self) -> None:
         self.reset()
 
@@ -238,15 +240,8 @@ class Connect4:
 
     def render(self) -> None:
         """Print the board in a readable format."""
-        symbols = {
-            self.EMPTY: ".",
-            self.PLAYER1: "X",
-            self.PLAYER2: "O",
-        }
-
         print()
-        for row in self.board:
-            print(" ".join(symbols[cell] for cell in row))
+        print(self)
         print("0 1 2 3 4 5 6")
         print(f"Current player: {self.current_player}")
         if self.winner is not None:
@@ -256,27 +251,6 @@ class Connect4:
         print()
 
     def __str__(self) -> str:
-        symbols = {
-            self.EMPTY: ".",
-            self.PLAYER1: "X",
-            self.PLAYER2: "O",
-        }
-        rows = [" ".join(symbols[cell] for cell in row) for row in self.board]
+        rows = [" ".join(self.SYMBOLS[cell] for cell in row) for row in self.board]
         return "\n".join(rows)
 
-
-if __name__ == "__main__":
-    game = Connect4()
-
-    moves = [3, 3, 2, 2, 1, 1, 0]
-
-    for move in moves:
-        result = game.make_move(move)
-        game.render()
-        print(result)
-        if result.done:
-            break
-
-    print("Undoing last move...")
-    game.undo_move()
-    game.render()

@@ -1,8 +1,8 @@
 """
 VecConnect4 — vectorized batch Connect 4 engine for parallel RL training.
 
-Sits in training/vec_connect4.py alongside train_policy_rl.py.
-Does NOT replace engine.py — MCTS/Minimax/eval still use Connect4.
+Does NOT replace engine.py — MCTS/Minimax/eval still use Connect4;
+this engine exists to step hundreds of self-play games per call.
 
 Board layout:
     boards[n, r, c]  —  0=empty, 1=player1, 2=player2
@@ -191,12 +191,12 @@ def _check_wins_batch(
 
 def _check_win_single(board: np.ndarray, row: int, col: int, player: int) -> bool:
     """4-in-a-row check for a single board after placing at (row, col)."""
-    ROWS, COLS = 6, 7
+    rows, cols = VecConnect4.ROWS, VecConnect4.COLS
     for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
         count = 1
         for sign in (1, -1):
             r, c = row + sign * dr, col + sign * dc
-            while 0 <= r < ROWS and 0 <= c < COLS and board[r, c] == player:
+            while 0 <= r < rows and 0 <= c < cols and board[r, c] == player:
                 count += 1
                 r += sign * dr
                 c += sign * dc

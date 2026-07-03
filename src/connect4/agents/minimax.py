@@ -1,24 +1,12 @@
+"""Depth-limited minimax agent with alpha-beta pruning."""
+
 from __future__ import annotations
 
-from typing import Optional
+from connect4.agents.base import BaseAgent
 from connect4.engine import Connect4
 
 
-"""
-minimax_agent.py
-"""
-
-
-"""
-Thought process:
-- Build general structure
-- Find best heuristic function, etc.
-- Add improvements/refinements based on evaluation
-
-"""
-
-
-class MinimaxAgent:
+class MinimaxAgent(BaseAgent):
     """
     Minimax agent with alpha-beta pruning for Connect-4.
 
@@ -35,20 +23,20 @@ class MinimaxAgent:
     LOSS_SCORE = -1_000_000
 
     def __init__(self, depth: int = 5, name: str | None = None) -> None:
+        super().__init__(name or f"minimax-{depth}")
         self.depth = depth
-        self.name = f"minimax-{depth}"
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def choose_action(self, game: Connect4) -> int:
-        self.player = game.current_player
-        self.opponent = Connect4.PLAYER2 if self.player == Connect4.PLAYER1 else Connect4.PLAYER1
         """
         Return the column index of the best move for this agent.
         Call this on the agent's turn with the live game object.
         """
+        self.player = game.current_player
+        self.opponent = Connect4.PLAYER2 if self.player == Connect4.PLAYER1 else Connect4.PLAYER1
         best_col = -1
         best_score = float("-inf")
         alpha = float("-inf")
@@ -197,30 +185,3 @@ class MinimaxAgent:
 
         return 0
 
-
-# ----------------------------------------------------------------------
-# Example usage
-# ----------------------------------------------------------------------
-
-if __name__ == "__main__":
-    game  = Connect4()
-    agent = MinimaxAgent(player=Connect4.PLAYER2, depth=5)
-
-    game.render()
-
-    while not game.is_terminal():
-        if game.current_player == Connect4.PLAYER1:
-            # Human move
-            col = int(input("Your move (0-6): "))
-        else:
-            # Agent move
-            col = agent.choose_action(game)
-            print(f"Agent plays column {col}")
-
-        try:
-            game.make_move(col)
-        except ValueError as e:
-            print(e)
-            continue
-
-        game.render()
