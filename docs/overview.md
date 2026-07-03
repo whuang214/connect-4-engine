@@ -75,8 +75,8 @@ result for pure self-play RL:
 The RL result is the most instructive: behavior cloning from self-play
 without search-improved targets plateaued hard — the network learned openings
 and general shape but never learned to calculate forced sequences. The full
-analysis is in [results.md](results.md); the proposed fix (hybrid MCTS +
-network, AlphaZero-style) is designed in [future-work.md](future-work.md).
+analysis is in [results.md](results.md); planned improvements are laid out
+in [future-work.md](future-work.md).
 
 ## Tech stack
 

@@ -1,80 +1,88 @@
 # Future Work
 
-## Hybrid MCTS + Neural Network Agent (AlphaZero-lite)
+Three planned directions, in priority order.
 
-A prototype `HybridMCTSAgent` was built during the project (originally
-`agents/hybrid_mcts_agent.py`, removed from the codebase — see
-[why it was removed](#why-it-was-removed) below; the full source remains in git
-history prior to its removal). It is the natural next step suggested by the
-tournament results: combine MCTS's search strength with the RL network's fast
-learned evaluation.
+## 1. Maximize the minimax agent
 
-### Design
+The MCTS agent got the full enhancement treatment (tactical overrides,
+threat-aware rollouts, tree reuse); minimax should get the same. In rough
+order of impact:
 
-The agent replaced pure MCTS's random rollouts with **neural-network leaf
-evaluation**:
+- **Bitboards** — represent each side's pieces as one 64-bit integer and
+  detect four-in-a-row with a handful of shift-AND operations. This is the
+  single biggest speedup available (typically 1–2 orders of magnitude in node
+  throughput over the current list-of-lists board), which converts directly
+  into deeper search at the same time budget.
+- **Iterative deepening with a time budget** — search depth 1, 2, 3…
+  until a per-move clock expires instead of a fixed depth. This makes
+  strength specs time-based (`minimax-500ms`) and makes compute-fair
+  comparisons against MCTS trivial.
+- **Transposition table (Zobrist hashing)** — Connect 4 positions transpose
+  heavily (different move orders reach the same board). Caching evaluated
+  positions prunes repeated work and pairs naturally with iterative
+  deepening (previous-iteration results seed move ordering).
+- **Stronger move ordering** — principal variation from the previous
+  deepening pass first, then killer moves and a history heuristic. Alpha-beta
+  cutoff quality is the whole game; center-first ordering is a good start but
+  leaves a lot on the table.
+- **Evaluation upgrades** — odd/even threat parity (Connect 4 theory: the
+  first player wants threats on odd rows, the second on even rows) and
+  differentiating open vs. blocked three-in-a-rows.
+- **Opening book** — Connect 4 is solved (first player wins by opening in the
+  center); even a shallow book saves the deepest searches where they matter
+  least.
 
-- **Selection/expansion** — identical to the pure MCTS agent: UCT
-  (`exploration_weight = √2`), center-ordered untried moves, tactical
-  immediate-win/immediate-block overrides before search.
-- **Evaluation** — instead of playing a rollout to a terminal state, the leaf
-  position is encoded with the shared 4-channel `encode_board()` encoder and
-  scored by the trained policy-value network's **value head** (one forward pass,
-  ~1 ms) mapped from `[-1, 1]` to a `[0, 1]` win probability from the root
-  player's perspective.
-- **Backpropagation** — each node on the path accumulates the value from its
-  own perspective (`v` for nodes where the root player just moved, `1 − v`
-  otherwise).
-- **Move selection** — most-visited root child (visit count is more robust than
-  mean value at low simulation counts).
+Then re-run the scaling experiments (`connect4 experiment`) at **equal
+wall-clock per move** rather than fixed depth. The current results show the
+gap closing to 56–44 at depth 9 as compute approaches parity — a tuned
+minimax could plausibly flip the headline MCTS result.
 
-The intended payoff: each "simulation" costs one network call instead of a
-20–30-move rollout, so an equal time budget buys far more tree growth — and the
-evaluations are learned rather than noisy random playouts.
+## 2. Train the RL agent against stronger opponents
 
-### Why it was removed
+The v3 agent trained purely against itself, and the results analysis
+([results.md](results.md)) attributes its failure to exactly that: self-play
+never generated the precise tactical sequences that search agents produce.
+Planned changes:
 
-The prototype was never entered in the tournament, and a code review found two
-correctness bugs that meant it had likely never been run end-to-end:
+- **Wire the frozen-checkpoint opponent pool into the vectorized self-play
+  loop.** The trainer already maintains a pool of past-self snapshots; the
+  batched loop needs opponent-aware stepping (a subset of environments where
+  one seat is played by a frozen policy) so games stop being 100%
+  live-network mirror matches.
+- **Curriculum against the classical agents** — rule-based first, then
+  shallow minimax (depths 1–3). This directly injects the forced sequences
+  and fork threats the self-play distribution lacks. Deeper minimax is too
+  slow to sit inside a 512-env loop, but shallow depths are batchable.
+- **Outcome-weighted policy targets** — the current policy loss imitates
+  whatever move was played regardless of whether the game was won; only the
+  value head sees the outcome. Advantage-weighted cross-entropy (or plain
+  REINFORCE weighting) makes the policy head learn from results rather than
+  imitation.
+- **Keep the evaluation gauntlet fixed** (Random / Rule / MCTS-200) so any
+  new run is directly comparable to the v3 learning curve.
 
-1. **Tuple-unpack crash** — leaf evaluation called
-   `self.model(tensor).item()`, but both `PolicyValueNet` and
-   `PolicyValueNetSmall` return a `(policy_logits, value)` **tuple**, so the
-   first non-terminal leaf evaluation raises
-   `AttributeError: 'tuple' object has no attribute 'item'`.
-   The fix is `_, value = self.model(tensor)`.
-2. **Terminal-value scale mismatch** — terminal leaves were scored on a
-   `[-1, 1]` scale (win = 1.0, draw = 0.0, loss = −1.0) while non-terminal
-   leaves and the backpropagation logic use a `[0, 1]` win-probability scale
-   (the opponent inversion is `1.0 − v`). A terminal **loss** therefore
-   back-propagated as `1.0 − (−1.0) = 2.0` for opponent nodes, corrupting the
-   UCT averages exactly at the tactically decisive parts of the tree.
-   Terminal outcomes must map to the same `[0, 1]` scale: win = 1.0,
-   draw = 0.5, loss = 0.0.
-   (The method also contained a dead `value_for_current` computation that was
-   overwritten immediately — a leftover from an earlier perspective scheme.)
+## 3. Hybrid MCTS + neural network agent
 
-Rather than ship an unvalidated agent, the prototype was removed and its design
-recorded here.
+Combine the two strongest ideas in the project: MCTS's search with the
+network's learned evaluation — a simplified AlphaZero.
 
-### Roadmap for a proper revival
-
-In order of impact:
-
-1. **Fix the two bugs above** and validate with unit tests (terminal-leaf
-   backup values, tuple unpacking) before any strength testing.
-2. **PUCT selection with policy priors** — the network already has a policy
-   head that the prototype ignored. Replace vanilla UCT with AlphaZero's PUCT:
-   `Q(s,a) + c · P(s,a) · √N(s) / (1 + N(s,a))`, using the masked softmax of the
-   policy logits as `P`. This focuses search on moves the network already
-   believes in.
-3. **Close the training loop (true AlphaZero)** — train the network on MCTS
-   **visit-count distributions** instead of the self-play behavior-cloning
-   targets used in this project. The tournament analysis (see
-   [results.md](results.md)) showed pure self-play without search plateaus hard;
-   search-improved targets are the standard fix.
-4. **Batched leaf evaluation** — collect several leaves per batch and evaluate
-   them in one forward pass (virtual loss on pending nodes) to amortize GPU
-   latency.
-5. **Re-run the tournament** — hybrid-800 vs `mcts-700` and `minimax-7`, same
-   protocol as [results.md](results.md) (alternating first player, ≥50 games).
+- **Network leaf evaluation instead of rollouts** — expand the tree exactly
+  as the pure MCTS agent does (UCT selection, tactical win/block overrides,
+  center-ordered expansion), but score leaves with the policy-value network's
+  value head (~1 ms per forward pass) rather than playing a full random
+  rollout. Each simulation becomes much cheaper, so an equal time budget
+  buys a much larger tree. One design constraint to get right: terminal
+  outcomes and network values must be backed up on a single consistent
+  scale (win = 1, draw = 0.5, loss = 0 from each node's own perspective).
+- **PUCT selection with policy priors** — the network's policy head provides
+  move priors, so selection can use AlphaZero's PUCT rule
+  (`Q + c · P · √N / (1 + n)`) instead of vanilla UCT, focusing search on
+  moves the network already believes in.
+- **Close the training loop** — train the network on the hybrid's MCTS
+  visit-count distributions instead of raw self-play moves (true AlphaZero
+  training). This is also the strongest version of item 2's
+  "search-improved targets".
+- **Batched leaf evaluation** — buffer several pending leaves and evaluate
+  them in one forward pass (with virtual loss) to amortize inference latency.
+- **Enter it in the tournament** — same protocol as [results.md](results.md)
+  (alternating seats, ≥50 games) against `mcts-700` and `minimax-7`.

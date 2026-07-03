@@ -24,5 +24,5 @@ For install and quickstart, see the [project README](../README.md).
 | [results.md](results.md) | Full tournament tables, MCTS/minimax scaling curves, decision-time analysis, RL failure analysis |
 | [training.md](training.md) | Self-play RL pipeline: vectorized engine, hyperparameters, and the v1→v3 debugging journey |
 | [agents/](agents/README.md) | Per-agent algorithm write-ups: minimax, MCTS, RL policy, and the baselines |
-| [future-work.md](future-work.md) | Hybrid MCTS + neural network agent (AlphaZero-lite): design, why the prototype was removed, revival roadmap |
+| [future-work.md](future-work.md) | Roadmap: minimax upgrades, RL training against stronger opponents, and beyond |
 | [report.pdf](report.pdf) | The original CS5100 final report this project was submitted as |

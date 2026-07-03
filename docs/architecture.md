@@ -185,4 +185,4 @@ Random/Rule/MCTS win rates.
 ## See also
 
 - [Agent write-ups](agents/README.md) — algorithm details and measured strength per agent
-- [Future work](future-work.md) — the hybrid MCTS + network design
+- [Future work](future-work.md) — roadmap of planned improvements

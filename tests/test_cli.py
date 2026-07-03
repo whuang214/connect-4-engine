@@ -46,9 +46,10 @@ class TestCreateAgent:
         with pytest.raises(ValueError, match="Unknown agent type"):
             create_agent("alphago")
 
-    def test_error_message_no_longer_mentions_hybrid(self):
+    def test_error_message_lists_only_supported_agents(self):
         with pytest.raises(ValueError) as excinfo:
             create_agent("nonsense")
+        # Regression: removed agent types must not resurface in the help text.
         assert "hybrid" not in str(excinfo.value).lower()
 
     def test_creates_parametrized_agents_from_specs(self):

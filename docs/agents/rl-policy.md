@@ -120,10 +120,9 @@ setup in [`training/trainer.py`](../../src/connect4/training/trainer.py):
    it 59-37: the network's learned "positional" play is worth less than a
    fixed center heuristic against exact tactics.
 
-The established fix is to put search back in the loop — use the network to
-guide MCTS and train on search-improved targets (AlphaZero-style). A prototype
-hybrid agent was built and its design, bugs, and revival roadmap are recorded
-in [future-work.md](../future-work.md).
+The established fix is to put search back in the loop — train against
+stronger opponents and on search-improved targets. The planned approaches are
+laid out in [future-work.md](../future-work.md).
 
 ## Implementation notes
 
