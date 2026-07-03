@@ -10,11 +10,10 @@ from agents.rule_based_agent import RuleBasedAgent
 from agents.mcts_agent import MCTSAgent
 from agents.minimax_agent import MinimaxAgent
 from agents.rl_policy_agent import RLPolicyAgent
-from agents.hybrid_mcts_agent import HybridMCTSAgent
 
 
-DEFAULT_RL_MODEL = "run1"
-DEFAULT_RL_CHECKPOINT = "final"
+DEFAULT_RL_MODEL = "rl_pure_selfplay_v3"
+DEFAULT_RL_CHECKPOINT = "best"
 DEFAULT_MCTS_ITERATIONS = 500
 DEFAULT_MINIMAX_DEPTH = 5
 
@@ -39,15 +38,6 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
                 f"Expected format like 'minimax-5'."
             )
         return "minimax", int(value)
-
-    if agent_type.startswith("hybrid-"):
-        _, value = agent_type.split("-", 1)
-        if not value.isdigit():
-            raise ValueError(
-                f"Invalid hybrid agent format: '{agent_type}'. "
-                f"Expected format like 'hybrid-800'."
-            )
-        return "hybrid", int(value)
 
     # Bare agent names get their own defaults
     if agent_type == "mcts":
@@ -87,29 +77,6 @@ def resolve_rl_model_path(
         )
 
     return resolved_path
-
-
-def resolve_hybrid_model_path(model_path: str | None = None) -> str:
-    """Resolve the model path for HybridMCTSAgent."""
-    if model_path is not None:
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(
-                f"Hybrid agent model file not found: '{model_path}'."
-            )
-        return model_path
-
-    default_paths = [
-        "runs/main_run_v2/final_model.pt",
-        "runs/main_run/final_model.pt",
-    ]
-    for p in default_paths:
-        if os.path.exists(p):
-            return p
-
-    raise FileNotFoundError(
-        "No trained value network model found. "
-        "Pass --model-path1/--model-path2 with the path to final_model.pt"
-    )
 
 
 def create_agent(
@@ -157,20 +124,10 @@ def create_agent(
             model_path=resolved_model_path,
         )
 
-    if agent_type == "hybrid":
-        resolved_model_path = resolve_hybrid_model_path(model_path=model_path)
-
-        return HybridMCTSAgent(
-            name=name or f"HybridMCTS-{iterations}",
-            model_path=resolved_model_path,
-            iterations=iterations,
-            small_network=True,
-        )
-
     raise ValueError(
         f"Unknown agent type: '{agent_type}'. "
         f"Use: human, random, rule, mcts, mcts-<iterations>, "
-        f"minimax, minimax-<depth>, rl, hybrid, hybrid-<iterations>"
+        f"minimax, minimax-<depth>, rl"
     )
 
 
