@@ -16,7 +16,13 @@ DEFAULT_MCTS_ITERATIONS = 500
 DEFAULT_MINIMAX_DEPTH = 5
 
 
-def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
+def parse_agent_config(agent_type: str, iterations: int | None = None) -> tuple[str, int]:
+    """Resolve an agent spec to (type, strength).
+
+    Suffixed specs (``mcts-700``, ``minimax-7``) carry their own strength;
+    bare ``mcts``/``minimax`` use ``iterations`` when given, else their
+    per-type default (500 iterations / depth 5).
+    """
     agent_type = agent_type.lower().strip()
 
     if agent_type.startswith("mcts-"):
@@ -37,13 +43,13 @@ def parse_agent_config(agent_type: str, iterations: int) -> tuple[str, int]:
             )
         return "minimax", int(value)
 
-    # Bare agent names get their own defaults
+    # Bare agent names: explicit --iterations wins, else the per-type default
     if agent_type == "mcts":
-        return "mcts", DEFAULT_MCTS_ITERATIONS
+        return "mcts", iterations if iterations is not None else DEFAULT_MCTS_ITERATIONS
     if agent_type == "minimax":
-        return "minimax", DEFAULT_MINIMAX_DEPTH
+        return "minimax", iterations if iterations is not None else DEFAULT_MINIMAX_DEPTH
 
-    return agent_type, iterations
+    return agent_type, iterations if iterations is not None else DEFAULT_MCTS_ITERATIONS
 
 
 def resolve_rl_model_path(
@@ -80,7 +86,7 @@ def resolve_rl_model_path(
 def create_agent(
     agent_type: str,
     name: str | None = None,
-    iterations: int = DEFAULT_MCTS_ITERATIONS,
+    iterations: int | None = None,
     model_name: str | None = None,
     checkpoint: str = DEFAULT_RL_CHECKPOINT,
     model_path: str | None = None,

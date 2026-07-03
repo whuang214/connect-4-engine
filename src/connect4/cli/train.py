@@ -43,7 +43,9 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     loss.add_argument("--policy-weight",  type=float, default=1.0)
     loss.add_argument("--value-weight",   type=float, default=1.0)
     loss.add_argument("--entropy-weight", type=float, default=0.05)
-    loss.add_argument("--augment-mirror", action="store_true", default=True)
+    loss.add_argument("--augment-mirror", action=argparse.BooleanOptionalAction,
+                      default=True,
+                      help="mirror-augment replay data (disable with --no-augment-mirror)")
 
     ckpt = parser.add_argument_group("checkpointing & eval")
     ckpt.add_argument("--snapshot-interval",    type=int, default=10000)

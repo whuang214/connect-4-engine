@@ -394,8 +394,15 @@ class Trainer:
         ]}
         self._save_config()
 
+    def _config_dict(self) -> dict:
+        """args as a plain dict, minus CLI plumbing that isn't serializable."""
+        return {
+            k: v for k, v in vars(self.args).items()
+            if k not in ("func", "mode")
+        }
+
     def _save_config(self) -> None:
-        cfg = vars(self.args).copy()
+        cfg = self._config_dict()
         cfg["device"] = str(self.device)
         with open(os.path.join(self.run_dir, "config.json"), "w") as f:
             json.dump(cfg, f, indent=2)
@@ -448,8 +455,9 @@ class Trainer:
         return float(policy_loss), float(value_loss), float(entropy)
 
     def maybe_snapshot(self, ep: int) -> None:
-        if ep % self.args.snapshot_interval != 0:
-            return
+        # Cadence is enforced by the caller (run() fires this once per crossed
+        # snapshot_interval boundary); episodes_done advances in n_envs steps,
+        # so an exact-multiple check here would almost never pass.
         self.checkpoint_pool.append(
             FrozenPolicyAgent(self.model, self.device, f"Frozen-{ep}")
         )
@@ -464,7 +472,7 @@ class Trainer:
             "scheduler_state_dict": self.scheduler.state_dict(),
             "episode":              ep,
             "best_metric":          self.best_metric,
-            "config":               vars(self.args),
+            "config":               self._config_dict(),
         }, path)
 
     def run(self) -> None:

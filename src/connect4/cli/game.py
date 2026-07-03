@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from connect4.agents.factory import DEFAULT_MCTS_ITERATIONS, DEFAULT_RL_CHECKPOINT
+from connect4.agents.factory import DEFAULT_RL_CHECKPOINT
 from connect4.engine import Connect4
 
 
@@ -14,8 +14,14 @@ def _add_agent_args(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--agent2", type=str, default="mcts")
     subparser.add_argument("--name1",  type=str, default=None)
     subparser.add_argument("--name2",  type=str, default=None)
-    subparser.add_argument("--iterations1", type=int, default=DEFAULT_MCTS_ITERATIONS)
-    subparser.add_argument("--iterations2", type=int, default=DEFAULT_MCTS_ITERATIONS)
+    subparser.add_argument("--iterations1", type=int, default=None,
+                           help="strength for a bare 'mcts'/'minimax' spec "
+                                "(iterations / depth); suffixed specs like "
+                                "mcts-700 carry their own")
+    subparser.add_argument("--iterations2", type=int, default=None,
+                           help="strength for a bare 'mcts'/'minimax' spec "
+                                "(iterations / depth); suffixed specs like "
+                                "mcts-700 carry their own")
     subparser.add_argument("--model1", type=str, default=None,
                            help="run folder name inside runs/ for an RL agent")
     subparser.add_argument("--model2", type=str, default=None,
