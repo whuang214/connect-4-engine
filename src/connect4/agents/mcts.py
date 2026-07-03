@@ -1,7 +1,7 @@
 import math
 import random
 from collections import deque
-from agents.base_agent import BaseAgent
+from connect4.agents.base import BaseAgent
 
 # Maximum number of per-move stat entries kept in memory.
 # Prevents unbounded growth during long tournament runs.

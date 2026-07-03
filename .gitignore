@@ -1,5 +1,20 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/
+
+# OS
 .DS_Store
+
+# Model checkpoints are too large for git — only the shipped tournament model
+# is tracked. NOTE: the negation works because the exclusion is a file glob
+# (runs/**/*.pt), not a directory rule; if this is ever changed to `runs/`,
+# git cannot re-include files under an ignored directory.
+runs/**/*.pt
+!runs/rl_pure_selfplay_v3/best_model.pt

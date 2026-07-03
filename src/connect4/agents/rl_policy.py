@@ -6,8 +6,8 @@ from typing import Optional
 
 import torch
 
-from agents.base_agent import BaseAgent
-from models.policy_value_network import (
+from connect4.agents.base import BaseAgent
+from connect4.models.policy_value_network import (
     PolicyValueNet,
     PolicyValueNetSmall,
     encode_board,

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "connect4-engine"
+version = "1.0.0"
+description = "Connect 4 AI engine: minimax, MCTS, and self-play RL agents with evaluation and tournament tooling"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Will Huang" }]
+keywords = ["connect4", "mcts", "minimax", "reinforcement-learning", "alphazero", "game-ai"]
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+ui = ["pygame>=2.5"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+connect4 = "connect4.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import pygame
 
-from engine import Connect4
+from connect4.engine import Connect4
 
 
 @dataclass

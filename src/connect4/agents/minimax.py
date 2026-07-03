@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from engine import Connect4
+from connect4.engine import Connect4
 
 
 """

@@ -1,8 +1,8 @@
 """
-Train a strong policy-value RL agent for Connect 4 via selfplay.
+Self-play trainer for the Connect 4 policy-value RL agent.
 
-Run from project root:
-    python -m training.train_policy_rl --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
+Launch via the CLI:
+    connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
 """
 
 from __future__ import annotations
@@ -12,10 +12,9 @@ import copy
 import json
 import os
 import random
-import sys
 import time
 from dataclasses import dataclass
-from typing import Any, List
+from typing import List
 
 import numpy as np
 import torch
@@ -23,22 +22,21 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from engine import Connect4
-from agents.random_agent import RandomAgent
-from agents.rule_based_agent import RuleBasedAgent
-from agents.rl_policy_agent import RLPolicyAgent
-from models.policy_value_network import (
+from connect4.engine import Connect4
+from connect4.agents.random import RandomAgent
+from connect4.agents.rule_based import RuleBasedAgent
+from connect4.agents.rl_policy import RLPolicyAgent
+from connect4.models.policy_value_network import (
     PolicyValueNet,
     PolicyValueNetSmall,
+    encode_board,
     mirror_action,
     mirror_encoded_state,
 )
-from training.vec_engine import VecConnect4
+from connect4.training.vec_engine import VecConnect4, _check_win_single
 
 try:
-    from agents.mcts_agent import MCTSAgent
+    from connect4.agents.mcts import MCTSAgent
 except Exception:
     MCTSAgent = None
 
@@ -121,7 +119,6 @@ class FrozenPolicyAgent:
         self._model: nn.Module | None = None
 
     def choose_action(self, game: Connect4) -> int:
-        from models.policy_value_network import encode_board
         legal = game.get_legal_moves()
         if len(legal) == 1:
             return legal[0]
@@ -161,7 +158,6 @@ def _find_tactical_move(
     heights: np.ndarray,   # (M, 7)    int8
     players: np.ndarray,   # (M,)      int8
 ) -> np.ndarray:
-    from training.vec_engine import _check_win_single
     M            = len(players)
     result       = np.full(M, -1, dtype=np.int64)
     center_order = [3, 2, 4, 1, 5, 0, 6]
@@ -620,76 +616,9 @@ class Trainer:
               f"{(episodes_done - self.start_episode) / max(elapsed, 1e-6):.1f} ep/s")
 
 
-# ---------------------------------------------------------------------------
-# Args
-# ---------------------------------------------------------------------------
-
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--episodes",   type=int, default=200000)
-    p.add_argument("--run-name",   type=str, default="rl_policy")
-    p.add_argument("--output-dir", type=str, default="runs")
-    p.add_argument("--resume",     type=str, default=None)
-    p.add_argument("--seed",       type=int, default=42)
-    p.add_argument("--n-envs",     type=int, default=512)
-
-    p.add_argument("--lr",           type=float, default=3e-4)
-    p.add_argument("--min-lr",       type=float, default=1e-5)
-    p.add_argument("--weight-decay", type=float, default=1e-4)
-    p.add_argument("--grad-clip",    type=float, default=1.0)
-
-    p.add_argument("--batch-size",          type=int, default=1024)
-    p.add_argument("--buffer-size",         type=int, default=1000000)
-    p.add_argument("--updates-per-episode", type=int, default=2)
-    p.add_argument("--updates-per-batch",   type=int, default=256,
-                   help="If >0, do exactly this many gradient steps per outer loop.")
-
-    p.add_argument("--channels",      type=int,   default=128)
-    p.add_argument("--num-blocks",    type=int,   default=6)
-    p.add_argument("--dropout",       type=float, default=0.10)
-    p.add_argument("--small-network", action="store_true")
-
-    p.add_argument("--epsilon-start",              type=float, default=0.3)
-    p.add_argument("--epsilon-end",                type=float, default=0.05)
-    p.add_argument("--epsilon-decay-episodes",     type=int,   default=600000)
-    p.add_argument("--temperature-start",          type=float, default=2.0)
-    p.add_argument("--temperature-end",            type=float, default=0.3)
-    p.add_argument("--temperature-decay-episodes", type=int,   default=800000)
-
-    p.add_argument("--policy-weight",  type=float, default=1.0)
-    p.add_argument("--value-weight",   type=float, default=1.0)
-    p.add_argument("--entropy-weight", type=float, default=0.05)
-    p.add_argument("--augment-mirror", action="store_true", default=True)
-
-    p.add_argument("--snapshot-interval",    type=int, default=10000)
-    p.add_argument("--max-checkpoint-pool",  type=int, default=8)
-    p.add_argument("--eval-interval",        type=int, default=25000)
-    p.add_argument("--eval-games",           type=int, default=100)
-    p.add_argument("--eval-games-small",     type=int, default=20)
-    p.add_argument("--save-interval",        type=int, default=25000)
-    p.add_argument("--log-interval",         type=int, default=2048)
-    p.add_argument("--mcts-eval-iterations", type=int, default=200,
-                   help="MCTS iterations for evaluation opponent only.")
-
-    p.add_argument("--eval-debug", action="store_true", default=False,
-                   help="Print per-move debug output during eval games")
-
-    return p.parse_args()
-
-
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-
-def main() -> None:
-    args = parse_args()
-    set_seed(args.seed)
-    Trainer(args).run()
-
-
-if __name__ == "__main__":
-    main()

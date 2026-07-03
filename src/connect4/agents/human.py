@@ -1,4 +1,4 @@
-from agents.base_agent import BaseAgent
+from connect4.agents.base import BaseAgent
 
 
 class HumanAgent(BaseAgent):
