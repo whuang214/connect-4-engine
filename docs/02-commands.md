@@ -1,8 +1,8 @@
 # CLI Reference
 
-Complete reference for the `connect4` command. `python -m connect4` is an
-exact alias. All flags below are read from
-[src/connect4/cli/](../src/connect4/cli/) — that code is the source of truth.
+Complete reference for the CLI, invoked as `python -m connect4 <subcommand>`.
+All flags below are read from
+[connect4/cli/](../connect4/cli/) — that code is the source of truth.
 
 **Run everything from the repo root.** Model loading (`runs/`) and result
 output (`results/`) resolve relative to the current working directory.
@@ -12,36 +12,34 @@ output (`results/`) resolve relative to the current working directory.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows   (macOS/Linux: source .venv/bin/activate)
-pip install -e .                  # core: torch, numpy, tqdm
-pip install -e ".[ui]"            # + pygame (graphical board)
-pip install -e ".[dev]"           # + pytest
-pip install -e ".[ui,dev]"        # everything
+pip install -r requirements.txt   # torch, numpy, tqdm, pytest
+pip install pygame                # optional — only for the graphical board (ui)
 ```
 
-- Requires Python 3.10+.
+- Requires Python 3.10+. No install step for the package itself — the
+  `connect4/` package lives at the repo root and imports directly.
 - On platforms where pygame has no wheels (e.g. Windows ARM64),
-  `pip install pygame-ce` is a drop-in replacement for the `[ui]` extra.
+  `pip install pygame-ce` is a drop-in replacement.
 - CUDA users: install torch from [pytorch.org](https://pytorch.org/get-started/locally/)
   first; the trainer and RL agent use CUDA automatically when available.
 
-`connect4 --help` is instant — heavy imports (torch, pygame) only happen
+`python -m connect4 --help` is instant — heavy imports (torch, pygame) only happen
 inside the subcommand you actually run.
 
 ## Subcommands
 
 | Command | What it does |
 |---|---|
-| `connect4 play` | Terminal game between any two agents (or you) |
-| `connect4 ui` | Pygame board (needs the `[ui]` extra) |
-| `connect4 eval` | Head-to-head benchmark, alternating first player |
-| `connect4 train` | Self-play RL training |
-| `connect4 tournament` | The report's full round-robin (~8-10 h) |
-| `connect4 experiment` | MCTS-vs-minimax scaling sweeps, parts 1-4 |
+| `python -m connect4 play` | Terminal game between any two agents (or you) |
+| `python -m connect4 ui` | Pygame board (needs pygame) |
+| `python -m connect4 eval` | Head-to-head benchmark, alternating first player |
+| `python -m connect4 train` | Self-play RL training |
+| `python -m connect4 tournament` | The report's full round-robin (~8-10 h) |
 
 ## Agent specifier grammar
 
 `--agent1` / `--agent2` accept a spec string
-(parsed by [agents/factory.py](../src/connect4/agents/factory.py)):
+(parsed by [agents/factory.py](../connect4/agents/factory.py)):
 
 | Spec | Agent | Notes |
 |---|---|---|
@@ -79,7 +77,7 @@ checkpoint `best`. The shipped run contains `best_model.pt` only —
 
 ---
 
-## `connect4 play`
+## `python -m connect4 play`
 
 Terminal game. Extra flags on top of the shared agent flags:
 
@@ -88,24 +86,24 @@ Terminal game. Extra flags on top of the shared agent flags:
 | `--no-render` | off | Don't print the board after each move |
 
 ```bash
-connect4 play                                         # you vs MCTS-500
-connect4 play --agent1 human --agent2 minimax-7       # you vs depth-7 minimax
-connect4 play --agent1 mcts-500 --agent2 minimax-5    # watch two AIs play
+python -m connect4 play                                         # you vs MCTS-500
+python -m connect4 play --agent1 human --agent2 minimax-7       # you vs depth-7 minimax
+python -m connect4 play --agent1 mcts-500 --agent2 minimax-5    # watch two AIs play
 ```
 
-## `connect4 ui`
+## `python -m connect4 ui`
 
 Pygame board with drop animation, hover preview, undo, and per-move timings.
 Takes exactly the shared agent flags; `human` slots are controlled with the
-mouse. Requires the `[ui]` extra (exits with an install hint otherwise).
+mouse. Requires pygame (exits with an install hint otherwise).
 
 ```bash
-connect4 ui                                           # you vs MCTS-500
-connect4 ui --agent1 human --agent2 rl                # you vs the shipped RL model
-connect4 ui --agent1 mcts-700 --agent2 minimax-7      # AI vs AI spectator mode
+python -m connect4 ui                                           # you vs MCTS-500
+python -m connect4 ui --agent1 human --agent2 rl                # you vs the shipped RL model
+python -m connect4 ui --agent1 mcts-700 --agent2 minimax-7      # AI vs AI spectator mode
 ```
 
-## `connect4 eval`
+## `python -m connect4 eval`
 
 Head-to-head benchmark: alternates which agent moves first, times every move,
 and prints a summary (win rates, P1/P2 splits, game lengths, per-agent
@@ -119,14 +117,14 @@ internal stats). Extra flags:
 | `--print-moves` | off | Print every move as it is chosen |
 
 ```bash
-connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20
-connect4 eval --agent1 rule --agent2 rl --games 50 --no-print-each-game
-connect4 eval --agent1 rl --model1 my_run --checkpoint1 final --agent2 random --games 100
+python -m connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20
+python -m connect4 eval --agent1 rule --agent2 rl --games 50 --no-print-each-game
+python -m connect4 eval --agent1 rl --model1 my_run --checkpoint1 final --agent2 random --games 100
 ```
 
-## `connect4 train`
+## `python -m connect4 train`
 
-Self-play RL training ([training/trainer.py](../src/connect4/training/trainer.py)).
+Self-play RL training ([training/trainer.py](../connect4/training/trainer.py)).
 Writes to `runs/<run-name>/`: `config.json` (the exact flags used),
 `training_log.json` (loss/eval curves), `best_model.pt` (saved whenever the
 periodic eval score — rule + 0.5·random + 0.75·MCTS win rates — improves),
@@ -199,16 +197,16 @@ Checkpointing & eval:
 
 ```bash
 # Reproduce the shipped v3 run (RTX 2080 Ti: ~93-165 eps/s)
-connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
+python -m connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
 
 # Short smoke run with the small network
-connect4 train --episodes 20000 --run-name smoke --small-network --eval-interval 10000
+python -m connect4 train --episodes 20000 --run-name smoke --small-network --eval-interval 10000
 
 # Resume an interrupted run (scheduler position is re-derived from the episode count)
-connect4 train --resume runs/my_run/checkpoints/checkpoint_ep250368.pt --run-name my_run --episodes 1000000
+python -m connect4 train --resume runs/my_run/checkpoints/checkpoint_ep250368.pt --run-name my_run --episodes 1000000
 ```
 
-## `connect4 tournament`
+## `python -m connect4 tournament`
 
 The full round-robin used for the report: core matchups, baselines, the RL
 learning curve (auto-skips checkpoints that aren't present), minimax depth
@@ -227,34 +225,9 @@ interrupted run keeps its data. A full run is sized to finish overnight
 | `--quick` | off | Smoke test: 10 fast / 6 MCTS games per matchup (~15 min) |
 
 ```bash
-connect4 tournament --quick               # smoke test first
-connect4 tournament                       # the full ~8-10 h run
-connect4 tournament --skip-slow --output-dir results_rerun
-```
-
-## `connect4 experiment`
-
-Focused MCTS-vs-minimax scaling sweeps. Four independent parts that can run
-in separate terminals simultaneously; each writes its own
-`<output-dir>/mcts_vs_minimax_part<N>_<name>.json`.
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--part` | required | `1`, `2`, `3`, `4`, or `all` (sequential) |
-| `--quick` | off | 6 games per matchup (10 for part 3) |
-| `--output-dir` | `results` | Where the JSON goes |
-
-| Part | Contents | Games | Approx. time |
-|---|---|---|---|
-| 1 | MCTS-700 vs minimax depths 3/5/7/9 | 30 each | ~3 h |
-| 2 | MCTS 200/500/700/1000/1500/2000 vs Minimax-7 | 30 each | ~4 h |
-| 3 | MCTS-700 vs Minimax-7 extended head-to-head | 50 | ~5 h |
-| 4 | MCTS-200 vs minimax depths 3/5/7/9 | 30 each | ~2 h |
-
-```bash
-connect4 experiment --part 3              # the headline head-to-head
-connect4 experiment --part 1 --quick      # fast sanity check
-connect4 experiment --part all            # everything, sequentially
+python -m connect4 tournament --quick               # smoke test first
+python -m connect4 tournament                       # the full ~8-10 h run
+python -m connect4 tournament --skip-slow --output-dir results_rerun
 ```
 
 ---
@@ -264,14 +237,14 @@ connect4 experiment --part all            # everything, sequentially
 ### Play against the AI
 
 ```bash
-connect4 ui --agent1 human --agent2 minimax-7     # graphical (needs [ui])
-connect4 play --agent1 human --agent2 mcts-700    # terminal
+python -m connect4 ui --agent1 human --agent2 minimax-7     # graphical (needs pygame)
+python -m connect4 play --agent1 human --agent2 mcts-700    # terminal
 ```
 
 ### Benchmark two agents
 
 ```bash
-connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20 --no-print-each-game
+python -m connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20 --no-print-each-game
 ```
 
 First player alternates automatically; the summary includes P1/P2 win splits
@@ -280,26 +253,33 @@ and average per-move times for both agents.
 ### Reproduce the tournament
 
 ```bash
-connect4 tournament --quick               # ~15 min sanity pass
-connect4 tournament                       # full run, ~8-10 h overnight
-connect4 experiment --part all            # the scaling sweeps (parts also run in parallel terminals)
+python -m connect4 tournament --quick               # ~15 min sanity pass
+python -m connect4 tournament                       # full run, ~8-10 h overnight
 ```
 
-Compare your output against the shipped [results/](../results/) JSON.
+Compare your output against the shipped [results/](../results/) JSON. The
+four `mcts_vs_minimax_part*.json` files there are data from scaling sweeps
+run before their runner was folded into the tournament harness; to reproduce
+an individual matchup today, use `eval` (prints a summary but does not write
+JSON):
+
+```bash
+python -m connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 50   # the headline head-to-head
+```
 
 ### Retrain from scratch
 
 ```bash
-connect4 train --episodes 1000000 --run-name my_run --n-envs 512 --updates-per-batch 128
-connect4 eval --agent1 rl --model1 my_run --agent2 rule --games 100   # then benchmark it
+python -m connect4 train --episodes 1000000 --run-name my_run --n-envs 512 --updates-per-batch 128
+python -m connect4 eval --agent1 rl --model1 my_run --agent2 rule --games 100   # then benchmark it
 ```
 
-Training details and hyperparameter rationale: [training.md](training.md).
+Training details and hyperparameter rationale: [06-training.md](06-training.md).
 
 ### Resume training
 
 ```bash
-connect4 train --resume runs/my_run/checkpoints/checkpoint_ep250368.pt --run-name my_run --episodes 1000000
+python -m connect4 train --resume runs/my_run/checkpoints/checkpoint_ep250368.pt --run-name my_run --episodes 1000000
 ```
 
 Pass the same `--run-name` so output keeps flowing to the same folder. The
@@ -309,6 +289,6 @@ the LR scheduler position is re-derived from the episode count.
 ### Run tests
 
 ```bash
-pip install -e ".[dev]"
-pytest                                    # testpaths/addopts come from pyproject.toml
+pip install -r requirements.txt
+pytest                                    # plain pytest from the repo root works (root conftest.py handles imports)
 ```

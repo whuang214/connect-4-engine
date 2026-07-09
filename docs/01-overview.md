@@ -13,8 +13,8 @@ implemented from scratch:
    pure self-play on a custom vectorized engine (512 parallel games).
 
 All three (plus random and rule-based baselines) share one
-[game engine](../src/connect4/engine.py) and one
-[agent interface](../src/connect4/agents/base.py), and were compared in a
+[game engine](../connect4/engine.py) and one
+[agent interface](../connect4/agents/base.py), and were compared in a
 round-robin tournament of 26 matchups / 1,528 games (~8.2 hours) plus ~440
 additional games of MCTS-vs-minimax scaling experiments — raw JSON in
 [results/](../results/).
@@ -32,14 +32,14 @@ additional games of MCTS-vs-minimax scaling experiments — raw JSON in
 
 ## The three agents
 
-**Minimax** ([agents/minimax.py](../src/connect4/agents/minimax.py)) —
+**Minimax** ([agents/minimax.py](../connect4/agents/minimax.py)) —
 depth-limited alpha-beta search. Leaf positions are scored by scanning every
 4-cell window in all directions (open threes and twos, mixed windows are
 dead) plus a center-column bonus. Moves are explored center-first to maximize
 pruning. Depth 7 beats the random and rule-based baselines 100-0 and moves in
 ~0.4 s; each depth step costs roughly 9x more time.
 
-**MCTS** ([agents/mcts.py](../src/connect4/agents/mcts.py)) — UCT tree search
+**MCTS** ([agents/mcts.py](../connect4/agents/mcts.py)) — UCT tree search
 with three practical hardenings: tactical overrides (immediate wins/blocks are
 played without searching), threat-aware rollouts (rollout moves win, block,
 then avoid handing the opponent a win, instead of playing uniformly at
@@ -47,12 +47,12 @@ random), and tree reuse between moves (the chosen child becomes the next
 root). It searches by mutating the live game object with `make_move`/`undo_move`
 rather than copying boards.
 
-**RL policy** ([agents/rl_policy.py](../src/connect4/agents/rl_policy.py)) —
+**RL policy** ([agents/rl_policy.py](../connect4/agents/rl_policy.py)) —
 a ~2.3M-parameter residual CNN
-([models/policy_value_network.py](../src/connect4/models/policy_value_network.py))
+([models/policy_value_network.py](../connect4/models/policy_value_network.py))
 with a 7-way policy head and a tanh value head, trained for 500k pure
 self-play episodes on an RTX 2080 Ti using the vectorized batch engine
-([training/vec_engine.py](../src/connect4/training/vec_engine.py)). At play
+([training/vec_engine.py](../connect4/training/vec_engine.py)). At play
 time it masks illegal columns and applies the same win/block tactical override
 used during training. It moves in ~0.004 s.
 
@@ -75,18 +75,19 @@ result for pure self-play RL:
 The RL result is the most instructive: behavior cloning from self-play
 without search-improved targets plateaued hard — the network learned openings
 and general shape but never learned to calculate forced sequences. The full
-analysis is in [results.md](results.md); planned improvements are laid out
-in [future-work.md](future-work.md).
+analysis is in [07-results.md](07-results.md); planned improvements are laid out
+in [08-future-work.md](08-future-work.md).
 
 ## Tech stack
 
-- **Python 3.10+**, src-layout package (`pip install -e .`), `connect4` CLI
+- **Python 3.10+**, flat repo-root package (`pip install -r requirements.txt`,
+  no install step), `python -m connect4` CLI
 - **PyTorch** — network and training loop (CUDA if available)
 - **NumPy** — the vectorized `(n, 6, 7)` int8 batch engine and the circular
   replay buffer
-- **pygame** (optional `[ui]` extra) — graphical board; `pygame-ce` works as
-  a drop-in where pygame lacks wheels
-- **pytest** (optional `[dev]` extra) — unit tests for engine, agents,
+- **pygame** (optional, installed separately) — graphical board; `pygame-ce`
+  works as a drop-in where pygame lacks wheels
+- **pytest** (in `requirements.txt`) — unit tests for engine, agents,
   training, and CLI
 
 ## Course context
@@ -97,6 +98,6 @@ Santra. MIT licensed.
 
 ## Read next
 
-- Full result tables and analysis: [results.md](results.md)
+- Full result tables and analysis: [07-results.md](07-results.md)
 - The original report: [report.pdf](report.pdf)
-- How to run everything yourself: [commands.md](commands.md)
+- How to run everything yourself: [02-commands.md](02-commands.md)

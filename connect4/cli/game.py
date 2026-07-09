@@ -126,7 +126,7 @@ def run_ui(args: argparse.Namespace) -> None:
     except ImportError:
         print(
             "The graphical UI requires pygame, which is not installed.\n"
-            'Install it with:  pip install -e ".[ui]"'
+            "Install it with:  pip install pygame   (pygame-ce on Windows ARM64)"
         )
         sys.exit(1)
 

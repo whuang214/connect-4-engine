@@ -2,10 +2,10 @@
 
 Every number below comes from the raw JSON in [`results/`](../results/),
 produced by the shared tournament harness
-([`evaluation/tournament.py`](../src/connect4/evaluation/tournament.py) over
-[`evaluation/evaluate.py`](../src/connect4/evaluation/evaluate.py)). The
-training-side story behind the RL numbers is in [training.md](training.md);
-the proposed fix is in [future-work.md](future-work.md).
+([`evaluation/tournament.py`](../connect4/evaluation/tournament.py) over
+[`evaluation/evaluate.py`](../connect4/evaluation/evaluate.py)). The
+training-side story behind the RL numbers is in [06-training.md](06-training.md);
+the proposed fix is in [08-future-work.md](08-future-work.md).
 
 ## Experimental setup
 
@@ -15,19 +15,19 @@ the proposed fix is in [future-work.md](future-work.md).
   Results are persisted to JSON after every matchup, so interrupted runs lose
   nothing.
 - **Game counts by cost tier** (from
-  [`cli/tournament.py`](../src/connect4/cli/tournament.py)) — fast matchups
+  [`cli/tournament.py`](../connect4/cli/tournament.py)) — fast matchups
   (RL vs minimax, non-MCTS baselines) get 100 games; matchups involving
   MCTS-700 or MCTS-200 get 20; MCTS-1000 gets 14; MCTS-2000 gets 10. The
-  follow-up experiments ([`cli/experiment.py`](../src/connect4/cli/experiment.py))
-  use 30 games per matchup, and 50 for the extended head-to-head.
-- **Agents** — [minimax](../src/connect4/agents/minimax.py) (alpha-beta,
-  fixed depth), [MCTS](../src/connect4/agents/mcts.py) (UCT, tactical
+  follow-up MCTS-vs-minimax scaling sweeps use 30 games per matchup, and 50
+  for the extended head-to-head.
+- **Agents** — [minimax](../connect4/agents/minimax.py) (alpha-beta,
+  fixed depth), [MCTS](../connect4/agents/mcts.py) (UCT, tactical
   overrides, safe rollouts, tree reuse),
-  [RL](../src/connect4/agents/rl_policy.py) (policy-value ResNet loaded from
+  [RL](../connect4/agents/rl_policy.py) (policy-value ResNet loaded from
   `runs/rl_pure_selfplay_v3/best_model.pt`, played at temperature 0.3 so
   repeated games differ; it applies the same one-ply win/block override as its
-  training loop), plus [random](../src/connect4/agents/random.py) and
-  [rule-based](../src/connect4/agents/rule_based.py) (win → block → center)
+  training loop), plus [random](../connect4/agents/random.py) and
+  [rule-based](../connect4/agents/rule_based.py) (win → block → center)
   baselines.
 - **Scale** — five recorded runs, 1,968 games total:
 
@@ -138,8 +138,8 @@ stop. Search agents manufacture such threats deliberately, hence 0%. The
 training-side diagnosis — a behavior-cloning policy target (outcomes only
 supervise the unused value head) plus a training distribution that never
 contains strong adversarial positions — is laid out in
-[training.md](training.md#honest-outcome-what-the-log-shows), and the
-AlphaZero-style remedy in [future-work.md](future-work.md).
+[06-training.md](06-training.md#honest-outcome-what-the-log-shows), and the
+AlphaZero-style remedy in [08-future-work.md](08-future-work.md).
 
 ## Decision time and compute fairness
 
@@ -176,21 +176,27 @@ a strict per-move time budget the ranking could flip.
 ## Regenerating the results
 
 Run from the repo root (the model loads from `runs/`, output goes to
-`results/`, and each JSON is rewritten after every matchup):
+`results/`, and the JSON is rewritten after every matchup):
 
 ```bash
-connect4 tournament            # 26 matchups, 1,528 games (recorded: 8.24 h; --quick ~15 min)
-connect4 experiment --part 1   # MCTS-700 vs minimax depths, 120 games (recorded: 3.8 h)
-connect4 experiment --part 2   # MCTS iteration scaling vs Minimax-7 (recorded: ~5.2 h for 150 games)
-connect4 experiment --part 3   # MCTS-700 vs Minimax-7 extended, 50 games (recorded: 1.6 h)
-connect4 experiment --part 4   # MCTS-200 vs minimax depths, 120 games (recorded: 1.5 h)
+python -m connect4 tournament            # 26 matchups, 1,528 games (recorded: 8.24 h; --quick ~15 min)
 ```
 
-Both commands accept `--quick` for a smoke-test pass with reduced game counts,
-and `connect4 tournament` accepts `--skip-slow` to drop the MCTS-2000 and
-Minimax-9 tiers. Note two divergences between the shipped JSONs and a fresh
-run: the current part 2 schedule includes a sixth matchup (MCTS-2000 vs
-Minimax-7, 30 games) that is absent from the shipped file, and the
+The four `mcts_vs_minimax_part1..4` files were produced by scaling sweeps
+whose runner has since been folded into the tournament harness; the recorded
+durations stand as historical facts (part 1: 3.8 h for 120 games; part 2:
+~5.2 h for 150; part 3: 1.6 h for 50; part 4: 1.5 h for 120). Today the
+systematic round-robin is `python -m connect4 tournament`, and any individual
+matchup can be reproduced with `eval` (which prints a summary but does not
+write JSON):
+
+```bash
+python -m connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 50   # part 3's extended head-to-head
+```
+
+`python -m connect4 tournament` accepts `--quick` for a smoke-test pass with
+reduced game counts and `--skip-slow` to drop the MCTS-2000 and Minimax-9
+tiers. Note one divergence between the shipped JSON and a fresh run: the
 tournament's five RL learning-curve matchups are skipped automatically unless
 the intermediate checkpoints exist locally (only `best_model.pt` ships in the
 repo). Raw output: [`results/tournament_results.json`](../results/tournament_results.json)

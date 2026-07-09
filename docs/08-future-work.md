@@ -32,15 +32,16 @@ order of impact:
   center); even a shallow book saves the deepest searches where they matter
   least.
 
-Then re-run the scaling experiments (`connect4 experiment`) at **equal
-wall-clock per move** rather than fixed depth. The current results show the
+Then re-run the scaling sweeps (`python -m connect4 tournament`, or individual
+matchups via `python -m connect4 eval`) at **equal wall-clock per move**
+rather than fixed depth. The current results show the
 gap closing to 56–44 at depth 9 as compute approaches parity — a tuned
 minimax could plausibly flip the headline MCTS result.
 
 ## 2. Train the RL agent against stronger opponents
 
 The v3 agent trained purely against itself, and the results analysis
-([results.md](results.md)) attributes its failure to exactly that: self-play
+([07-results.md](07-results.md)) attributes its failure to exactly that: self-play
 never generated the precise tactical sequences that search agents produce.
 Planned changes:
 
@@ -84,5 +85,5 @@ network's learned evaluation — a simplified AlphaZero.
   "search-improved targets".
 - **Batched leaf evaluation** — buffer several pending leaves and evaluate
   them in one forward pass (with virtual loss) to amortize inference latency.
-- **Enter it in the tournament** — same protocol as [results.md](results.md)
+- **Enter it in the tournament** — same protocol as [07-results.md](07-results.md)
   (alternating seats, ≥50 games) against `mcts-700` and `minimax-7`.

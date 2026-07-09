@@ -13,7 +13,7 @@ against every search agent. The analysis below explains why.
 
 ### Network
 
-[`PolicyValueNet`](../../src/connect4/models/policy_value_network.py) —
+[`PolicyValueNet`](../../connect4/models/policy_value_network.py) —
 a residual CNN with ~2.3M parameters:
 
 | Stage | Structure |
@@ -70,7 +70,7 @@ CLI spec: `rl`, which resolves to
 `--model-path1/--model-path2 <file.pt>`. Example:
 
 ```bash
-connect4 eval --agent1 rl --model1 rl_pure_selfplay_v3 --checkpoint1 best --agent2 rule --games 50
+python -m connect4 eval --agent1 rl --model1 rl_pure_selfplay_v3 --checkpoint1 best --agent2 rule --games 50
 ```
 
 ## Tournament performance
@@ -95,7 +95,7 @@ exceeded 10% across the entire run, while vs Random it reached ~100%.
 ### Why it failed against search
 
 The failure is structural, not a tuning miss — it follows from the training
-setup in [`training/trainer.py`](../../src/connect4/training/trainer.py):
+setup in [`training/trainer.py`](../../connect4/training/trainer.py):
 
 1. **The policy imitates played moves without outcome weighting.** The policy
    loss is plain `cross_entropy(logits, actions)` over whatever moves the
@@ -122,15 +122,15 @@ setup in [`training/trainer.py`](../../src/connect4/training/trainer.py):
 
 The established fix is to put search back in the loop — train against
 stronger opponents and on search-improved targets. The planned approaches are
-laid out in [future-work.md](../future-work.md).
+laid out in [08-future-work.md](../08-future-work.md).
 
 ## Implementation notes
 
-Source: [`agents/rl_policy.py`](../../src/connect4/agents/rl_policy.py).
+Source: [`agents/rl_policy.py`](../../connect4/agents/rl_policy.py).
 
 - **Lazy torch.** The factory imports `RLPolicyAgent` only inside the `rl`
   branch and the `agents` package re-exports lazily (PEP 562), so every other
-  agent — and `connect4 --help` — never pays the torch import.
+  agent — and `python -m connect4 --help` — never pays the torch import.
 - **Checkpoint loading** (`_load_model`) prefers the `config` dict saved in
   the checkpoint to reconstruct the architecture (`channels`, `num_blocks`,
   `dropout`); with no config it sniffs state-dict keys (a `features.` prefix
@@ -141,6 +141,6 @@ Source: [`agents/rl_policy.py`](../../src/connect4/agents/rl_policy.py).
   only `.pt` committed to the repo.
 - Training context (512-env vectorized self-play at 93–165 episodes/s on an
   RTX 2080 Ti, mirror augmentation, circular replay buffer, the v1→v3
-  fixes): see [training/trainer.py](../../src/connect4/training/trainer.py)
+  fixes): see [training/trainer.py](../../connect4/training/trainer.py)
   and the run config in
   [`runs/rl_pure_selfplay_v3/config.json`](../../runs/rl_pure_selfplay_v3/config.json).

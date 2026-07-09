@@ -23,7 +23,7 @@ uncontaminated by shared win/block logic.
 |---|---|---|
 | `name` | `"RandomAgent"` | Display name only |
 
-CLI spec: `random` (e.g. `connect4 eval --agent1 random --agent2 rl`).
+CLI spec: `random` (e.g. `python -m connect4 eval --agent1 random --agent2 rl`).
 
 ## Tournament performance
 
@@ -41,7 +41,7 @@ drops 7% of games to noise has real tactical blind spots (see
 
 ## Implementation notes
 
-Source: [`agents/random.py`](../../src/connect4/agents/random.py) (~25 lines).
+Source: [`agents/random.py`](../../connect4/agents/random.py) (~25 lines).
 
 Fastest agent in the suite (a few microseconds per move — one legality scan
 plus one RNG call), which makes it the standard smoke-test opponent for

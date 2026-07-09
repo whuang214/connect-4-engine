@@ -7,24 +7,24 @@ two game engines, how agents plug in, and the conventions every module shares.
 
 | Module | Role |
 |---|---|
-| [`engine.py`](../src/connect4/engine.py) | OO single-game engine (`Connect4`): make/undo move stack, incremental win detection, rendering |
-| [`tactics.py`](../src/connect4/tactics.py) | Shared tactical helpers: `CENTER_ORDER`, `ordered_legal_moves`, `find_immediate_win` |
-| [`agents/base.py`](../src/connect4/agents/base.py) | `BaseAgent` ABC: `choose_action` + stats contract |
-| [`agents/human.py`](../src/connect4/agents/human.py) | Terminal input agent with input validation |
-| [`agents/random.py`](../src/connect4/agents/random.py) | Uniform-random baseline |
-| [`agents/rule_based.py`](../src/connect4/agents/rule_based.py) | Win → block → center heuristic baseline |
-| [`agents/minimax.py`](../src/connect4/agents/minimax.py) | Depth-limited alpha-beta search with windowed positional heuristic |
-| [`agents/mcts.py`](../src/connect4/agents/mcts.py) | UCT Monte Carlo Tree Search with tactical overrides, threat-aware rollouts, tree reuse |
-| [`agents/rl_policy.py`](../src/connect4/agents/rl_policy.py) | Policy-network agent: masked logits, temperature sampling, tactical override |
-| [`agents/factory.py`](../src/connect4/agents/factory.py) | Spec strings (`mcts-700`, `minimax-7`, `rl`, ...) → agent instances; RL checkpoint resolution |
-| [`models/policy_value_network.py`](../src/connect4/models/policy_value_network.py) | `PolicyValueNet` (~2.3M-param residual CNN), `encode_board`, mirror-augmentation helpers |
-| [`training/vec_engine.py`](../src/connect4/training/vec_engine.py) | `VecConnect4`: batched NumPy engine stepping hundreds of games per call |
-| [`training/trainer.py`](../src/connect4/training/trainer.py) | Self-play `Trainer`: vectorized data generation, circular `ReplayBuffer`, eval-gated checkpointing |
-| [`evaluation/evaluate.py`](../src/connect4/evaluation/evaluate.py) | Head-to-head runner: first-player alternation, per-move timing, `EvaluationSummary` |
-| [`evaluation/tournament.py`](../src/connect4/evaluation/tournament.py) | `Matchup` runner: JSON persisted after every matchup, ETA, summary tables |
-| [`ui/game_ui.py`](../src/connect4/ui/game_ui.py) | Pygame board (optional `[ui]` extra) |
-| [`cli/main.py`](../src/connect4/cli/main.py) | `connect4` argparse dispatcher (stdlib-only at import time) |
-| [`cli/game.py`](../src/connect4/cli/game.py), [`cli/train.py`](../src/connect4/cli/train.py), [`cli/tournament.py`](../src/connect4/cli/tournament.py), [`cli/experiment.py`](../src/connect4/cli/experiment.py) | Subcommand argument surfaces + `run_*` handlers |
+| [`engine.py`](../connect4/engine.py) | OO single-game engine (`Connect4`): make/undo move stack, incremental win detection, rendering |
+| [`tactics.py`](../connect4/tactics.py) | Shared tactical helpers: `CENTER_ORDER`, `ordered_legal_moves`, `find_immediate_win` |
+| [`agents/base.py`](../connect4/agents/base.py) | `BaseAgent` ABC: `choose_action` + stats contract |
+| [`agents/human.py`](../connect4/agents/human.py) | Terminal input agent with input validation |
+| [`agents/random.py`](../connect4/agents/random.py) | Uniform-random baseline |
+| [`agents/rule_based.py`](../connect4/agents/rule_based.py) | Win → block → center heuristic baseline |
+| [`agents/minimax.py`](../connect4/agents/minimax.py) | Depth-limited alpha-beta search with windowed positional heuristic |
+| [`agents/mcts.py`](../connect4/agents/mcts.py) | UCT Monte Carlo Tree Search with tactical overrides, threat-aware rollouts, tree reuse |
+| [`agents/rl_policy.py`](../connect4/agents/rl_policy.py) | Policy-network agent: masked logits, temperature sampling, tactical override |
+| [`agents/factory.py`](../connect4/agents/factory.py) | Spec strings (`mcts-700`, `minimax-7`, `rl`, ...) → agent instances; RL checkpoint resolution |
+| [`models/policy_value_network.py`](../connect4/models/policy_value_network.py) | `PolicyValueNet` (~2.3M-param residual CNN), `encode_board`, mirror-augmentation helpers |
+| [`training/vec_engine.py`](../connect4/training/vec_engine.py) | `VecConnect4`: batched NumPy engine stepping hundreds of games per call |
+| [`training/trainer.py`](../connect4/training/trainer.py) | Self-play `Trainer`: vectorized data generation, circular `ReplayBuffer`, eval-gated checkpointing |
+| [`evaluation/evaluate.py`](../connect4/evaluation/evaluate.py) | Head-to-head runner: first-player alternation, per-move timing, `EvaluationSummary` |
+| [`evaluation/tournament.py`](../connect4/evaluation/tournament.py) | `Matchup` runner: JSON persisted after every matchup, ETA, summary tables |
+| [`ui/game_ui.py`](../connect4/ui/game_ui.py) | Pygame board (optional pygame install) |
+| [`cli/main.py`](../connect4/cli/main.py) | `python -m connect4` argparse dispatcher (stdlib-only at import time) |
+| [`cli/game.py`](../connect4/cli/game.py), [`cli/train.py`](../connect4/cli/train.py), [`cli/tournament.py`](../connect4/cli/tournament.py) | Subcommand argument surfaces + `run_*` handlers |
 
 ## The two-engine design
 
@@ -34,7 +34,7 @@ patterns, and neither is well served by the other's engine.
 
 ### `engine.py` — the OO single-game engine (search workload)
 
-[`Connect4`](../src/connect4/engine.py) models one live game as a mutable
+[`Connect4`](../connect4/engine.py) models one live game as a mutable
 object. Its defining feature is the undo stack: every `make_move` pushes a
 `MoveHistory` record (row, col, player, plus the *previous* `current_player`,
 `winner`, `done`, and `last_move`), and `undo_move` pops it to restore the
@@ -53,7 +53,7 @@ per-move cost is a handful of cell reads rather than a full-board scan.
 
 ### `training/vec_engine.py` — the batched NumPy engine (RL workload)
 
-[`VecConnect4`](../src/connect4/training/vec_engine.py) holds `n` games at
+[`VecConnect4`](../connect4/training/vec_engine.py) holds `n` games at
 once as flat arrays: `boards (n, 6, 7) int8`, `_heights (n, 7)`,
 `current_player`, `winner`, `done`. One `step(actions)` call advances every
 non-finished game: heights give O(1) drop rows (`row = ROWS-1 - height`),
@@ -72,9 +72,9 @@ on an RTX 2080 Ti for the v3 run) possible.
 The two engines share every convention: row 0 is the top of the board, the
 drop row is `ROWS-1-height`, players are `1`/`2` with `0` empty. Critically,
 their state encoders are kept **bit-identical**:
-[`encode_board`](../src/connect4/models/policy_value_network.py) (used at
+[`encode_board`](../connect4/models/policy_value_network.py) (used at
 play/eval time on `Connect4`) and
-[`VecConnect4.encode`](../src/connect4/training/vec_engine.py) (used during
+[`VecConnect4.encode`](../connect4/training/vec_engine.py) (used during
 training) produce the same 4-channel tensor for the same position. The test
 suite pins this equivalence, along with move-for-move cross-validation of the
 two engines — a network trained on one engine's encoding must see exactly the
@@ -82,7 +82,7 @@ same inputs when deployed against the other.
 
 ## Agent interface
 
-Every agent extends [`BaseAgent`](../src/connect4/agents/base.py):
+Every agent extends [`BaseAgent`](../connect4/agents/base.py):
 
 ```python
 choose_action(game) -> int   # required: return a legal column for the current player
@@ -93,14 +93,14 @@ get_stats() -> dict          # optional: nested {section: {metric: value}} (defa
 Two contract details matter:
 
 - **Agents receive a clone.** The evaluator
-  ([`play_one_game`](../src/connect4/evaluation/evaluate.py)) calls
+  ([`play_one_game`](../connect4/evaluation/evaluate.py)) calls
   `choose_action(game.clone())`, so agents may freely mutate the game they are
   handed — MCTS and minimax search in place on it with make/undo.
 - **Illegal moves are fatal.** The evaluator validates the returned column
   against the *real* game and raises `ValueError` on a mismatch.
 
 Agents are built from CLI spec strings by
-[`agents/factory.py`](../src/connect4/agents/factory.py):
+[`agents/factory.py`](../connect4/agents/factory.py):
 
 | Spec | Agent | Default |
 |---|---|---|
@@ -131,16 +131,16 @@ flowchart LR
     AGENTS -- "RL only" --> MODELS["models/policy_value_network.py<br>PolicyValueNet + encode_board"]
 ```
 
-`connect4 tournament` and `connect4 experiment` wrap the same
+`python -m connect4 tournament` wraps the same
 `evaluate_agents` loop via
-[`evaluation/tournament.py`](../src/connect4/evaluation/tournament.py),
+[`evaluation/tournament.py`](../connect4/evaluation/tournament.py),
 persisting JSON to `results/` after every matchup.
 
 ### Training path
 
 ```mermaid
 flowchart LR
-    CLI["cli/train.py<br>connect4 train"] --> TRAINER["training/trainer.py<br>Trainer.run()"]
+    CLI["cli/train.py<br>python -m connect4 train"] --> TRAINER["training/trainer.py<br>Trainer.run()"]
     TRAINER -- "512 parallel games<br>tactical override: win > block > net" --> VEC["training/vec_engine.py<br>VecConnect4"]
     VEC -- "states / actions / ±1 returns" --> BUF["ReplayBuffer<br>circular NumPy, mirror-augmented"]
     BUF -- "sampled batches" --> NET["PolicyValueNet<br>AdamW + cosine LR"]
@@ -175,14 +175,14 @@ Random/Rule/MCTS win rates.
   is the shared strongest-first column scan used by the rule-based agent,
   MCTS expansion/rollouts, and the trainer's tactical probe. Minimax derives
   the same order independently by sorting on distance from column 3.
-- **Lazy imports** — [`connect4.agents`](../src/connect4/agents/__init__.py)
+- **Lazy imports** — [`connect4.agents`](../connect4/agents/__init__.py)
   re-exports lazily (PEP 562 module `__getattr__`), and the factory imports
   `RLPolicyAgent` inside the `rl` branch, so **torch loads only when an RL
-  agent is actually created**. Pygame is imported only inside `connect4 ui`.
-  All `cli/*.py` modules are stdlib-only at import time so `connect4 --help`
+  agent is actually created**. Pygame is imported only inside `python -m connect4 ui`.
+  All `cli/*.py` modules are stdlib-only at import time so `python -m connect4 --help`
   stays instant.
 
 ## See also
 
-- [Agent write-ups](agents/README.md) — algorithm details and measured strength per agent
-- [Future work](future-work.md) — roadmap of planned improvements
+- [Agent write-ups](05-agents/README.md) — algorithm details and measured strength per agent
+- [Future work](08-future-work.md) — roadmap of planned improvements

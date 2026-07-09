@@ -1,0 +1,7 @@
+torch>=2.0
+numpy>=1.24
+tqdm>=4.65
+pytest>=8.0
+
+# Optional — only needed for the graphical UI (python -m connect4 ui):
+#   pip install pygame        (or pygame-ce on Windows ARM64)

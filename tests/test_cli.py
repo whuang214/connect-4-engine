@@ -120,16 +120,11 @@ class TestBuildParser:
         assert args.quick is True
         assert args.skip_slow is True
 
-    def test_experiment_subcommand(self):
-        args = build_parser().parse_args(["experiment", "--part", "3"])
-        assert args.mode == "experiment"
-        assert args.part == "3"
-
     def test_every_subcommand_sets_a_run_handler(self):
         parser = build_parser()
         samples = [
             ["play"], ["ui"], ["eval"],
-            ["train"], ["tournament"], ["experiment", "--part", "1"],
+            ["train"], ["tournament"],
         ]
         for argv in samples:
             args = parser.parse_args(argv)

@@ -11,7 +11,7 @@ the center as possible. No lookahead beyond one ply.
 `choose_action` walks the rules in order and returns at the first hit:
 
 1. **Immediate win** — `find_immediate_win(game, me)` from
-   [`tactics.py`](../../src/connect4/tactics.py): probe each legal column
+   [`tactics.py`](../../connect4/tactics.py): probe each legal column
    (center-first) with make/undo and play any that wins on the spot.
 2. **Immediate block** — `find_immediate_win(game, opponent)`: if the
    opponent has a winning column, occupy it.
@@ -48,7 +48,7 @@ RL failure analysis in [rl-policy.md](rl-policy.md).
 
 ## Implementation notes
 
-Source: [`agents/rule_based.py`](../../src/connect4/agents/rule_based.py).
+Source: [`agents/rule_based.py`](../../connect4/agents/rule_based.py).
 
 - Fully deterministic given a position: same board, same move. In evaluation
   it only produces varied games because opponents vary (the head-to-head
@@ -58,5 +58,5 @@ Source: [`agents/rule_based.py`](../../src/connect4/agents/rule_based.py).
   searches. Both minimax and MCTS punish it with near-perfect scores.
 - The final fallback branch (`legal_moves[0]`) is unreachable while legal
   moves exist; it is kept as a guard and counted separately in stats.
-- All tactical logic lives in shared [`tactics.py`](../../src/connect4/tactics.py)
+- All tactical logic lives in shared [`tactics.py`](../../connect4/tactics.py)
   — this agent contains no game-mechanics code of its own.

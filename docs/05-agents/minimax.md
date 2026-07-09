@@ -67,7 +67,7 @@ neither side can ever complete them.
 | `name` | `minimax-<depth>` | Auto-generated when omitted |
 
 CLI spec: `minimax` (depth 5) or `minimax-<depth>`, e.g.
-`connect4 eval --agent1 minimax-7 --agent2 mcts-700 --games 20`.
+`python -m connect4 eval --agent1 minimax-7 --agent2 mcts-700 --games 20`.
 
 ## Tournament performance
 
@@ -103,12 +103,12 @@ and loses 13-16 at depth 3).
 
 ## Implementation notes
 
-Source: [`agents/minimax.py`](../../src/connect4/agents/minimax.py).
+Source: [`agents/minimax.py`](../../connect4/agents/minimax.py).
 
 - **In-place search.** The evaluator hands agents a `game.clone()`, and
   minimax searches directly on that clone with `make_move`/`undo_move` — the
   engine's `MoveHistory` stack is what makes deep recursion allocation-free.
-  See [the two-engine design](../architecture.md#the-two-engine-design).
+  See [the two-engine design](../04-architecture.md#the-two-engine-design).
 - **No explicit win/block pre-check.** Unlike rule-based/MCTS/RL, it does not
   call `tactics.find_immediate_win` — any depth ≥ 2 search proves immediate
   wins and forced blocks on its own, and the depth-adjusted terminal scores

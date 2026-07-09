@@ -16,7 +16,7 @@ Each `choose_action` call:
 
 ### 0. Pre-search tactical overrides
 
-Before any search (shared [`tactics.py`](../../src/connect4/tactics.py)):
+Before any search (shared [`tactics.py`](../../connect4/tactics.py)):
 
 - Only one legal move → play it.
 - `find_immediate_win(game, me)` → play the winning column immediately.
@@ -95,7 +95,7 @@ rebuilds are reported in `get_stats()`.
 | `name` | `MCTS-<iterations>` | Auto-generated when omitted |
 
 CLI spec: `mcts` (500 iterations) or `mcts-<iterations>`, e.g.
-`connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20`.
+`python -m connect4 eval --agent1 mcts-700 --agent2 minimax-7 --games 20`.
 
 ## Tournament performance
 
@@ -136,14 +136,14 @@ per decision than minimax-7 for its 60/40 edge.
 
 ## Implementation notes
 
-Source: [`agents/mcts.py`](../../src/connect4/agents/mcts.py).
+Source: [`agents/mcts.py`](../../connect4/agents/mcts.py).
 
 - **In-place search via the undo stack.** All selection, expansion, and
   rollout moves are played on the game object the evaluator passes in (a
   `clone()` of the real game) and unwound with `undo_move` — thousands of
   make/undo pairs per decision, zero per-node board copies. This is the
   workload the OO engine is designed for
-  ([architecture](../architecture.md#the-two-engine-design)).
+  ([architecture](../04-architecture.md#the-two-engine-design)).
 - Nodes store `untried_moves = None` until first visited, so ordering work
   (`get_ordered_moves` runs several win-probes per column) is only paid for
   nodes the search actually reaches.

@@ -4,7 +4,7 @@ How the self-play RL agent (`rl` in the CLI) was trained, what every knob does,
 how to reproduce or resume a run, and — importantly — what went wrong across
 three training runs and what the final run actually achieved.
 
-Everything here is grounded in [`trainer.py`](../src/connect4/training/trainer.py),
+Everything here is grounded in [`trainer.py`](../connect4/training/trainer.py),
 [`runs/rl_pure_selfplay_v3/config.json`](../runs/rl_pure_selfplay_v3/config.json),
 [`runs/rl_pure_selfplay_v3/training_log.json`](../runs/rl_pure_selfplay_v3/training_log.json),
 and the [project report](report.pdf).
@@ -12,14 +12,14 @@ and the [project report](report.pdf).
 ## What gets trained
 
 A 2,306,839-parameter policy-value ResNet
-([`PolicyValueNet`](../src/connect4/models/policy_value_network.py): 128-channel
+([`PolicyValueNet`](../connect4/models/policy_value_network.py): 128-channel
 stem, 6 residual blocks, 7-logit policy head, tanh value head). Boards are
 encoded from the current player's perspective as 4 channels (my pieces,
 opponent pieces, side-to-move, normalized column heights) by `encode_board`,
 which is bit-identical between the sequential engine and the vectorized
 training engine (pinned by tests).
 
-At play time, [`RLPolicyAgent`](../src/connect4/agents/rl_policy.py) masks
+At play time, [`RLPolicyAgent`](../connect4/agents/rl_policy.py) masks
 illegal columns, applies the same win > block tactical override used during
 training, and picks argmax (or samples at a configurable temperature). Only the
 policy head is used to select moves; the value head is trained but unused at
@@ -28,10 +28,10 @@ inference.
 ## Pipeline walkthrough
 
 One outer loop of `Trainer.run()` in
-[`trainer.py`](../src/connect4/training/trainer.py):
+[`trainer.py`](../connect4/training/trainer.py):
 
 1. **Vectorized self-play** — `play_selfplay_vectorized` plays 512 games at
-   once on [`VecConnect4`](../src/connect4/training/vec_engine.py), a batched
+   once on [`VecConnect4`](../connect4/training/vec_engine.py), a batched
    `(n, 6, 7)` NumPy engine with O(1) height-based drops. All 512 positions are
    encoded and pushed through the network in a single forward pass. Moves are
    sampled from the temperature-scaled masked softmax; an epsilon fraction of
@@ -85,7 +85,7 @@ One outer loop of `Trainer.run()` in
 ## Hyperparameters (v3)
 
 Values from [`runs/rl_pure_selfplay_v3/config.json`](../runs/rl_pure_selfplay_v3/config.json);
-flags from [`cli/train.py`](../src/connect4/cli/train.py) (`connect4 train --help`).
+flags from [`cli/train.py`](../connect4/cli/train.py) (`python -m connect4 train --help`).
 
 | Config key | v3 value | CLI flag | Notes |
 |---|---|---|---|
@@ -114,8 +114,8 @@ flags from [`cli/train.py`](../src/connect4/cli/train.py) (`connect4 train --hel
 From the repo root (paths resolve relative to the CWD):
 
 ```bash
-pip install -e .
-connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 \
+pip install -r requirements.txt
+python -m connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 \
     --n-envs 512 --updates-per-batch 128
 ```
 
@@ -127,7 +127,7 @@ Output lands in `runs/<run-name>/`: `config.json`, `training_log.json`,
 and env count:
 
 ```bash
-connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 \
+python -m connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 \
     --n-envs 512 --updates-per-batch 128 \
     --resume runs/rl_pure_selfplay_v3/checkpoints/checkpoint_ep500224.pt
 ```
@@ -217,5 +217,5 @@ adversarial search — the double threats minimax and MCTS manufacture — are
 essentially absent from the buffer, and the network has no gradient signal
 about them. The tournament consequences (92% vs Random, 37% vs Rule-Based,
 0% vs every search agent at every checkpoint) are analyzed in
-[results.md](results.md); the standard fix — search-improved targets in an
-AlphaZero-style loop — is sketched in [future-work.md](future-work.md).
+[07-results.md](07-results.md); the standard fix — search-improved targets in an
+AlphaZero-style loop — is sketched in [08-future-work.md](08-future-work.md).

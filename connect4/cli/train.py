@@ -64,7 +64,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def run_train(args: argparse.Namespace) -> None:
-    # Imported here so `connect4 --help` never pays the torch import.
+    # Imported here so `python -m connect4 --help` never pays the torch import.
     from connect4.training.trainer import Trainer, set_seed
 
     set_seed(args.seed)

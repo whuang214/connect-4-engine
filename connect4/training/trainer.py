@@ -2,7 +2,7 @@
 Self-play trainer for the Connect 4 policy-value RL agent.
 
 Launch via the CLI:
-    connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
+    python -m connect4 train --episodes 1000000 --run-name rl_pure_selfplay_v3 --n-envs 512 --updates-per-batch 128
 """
 
 from __future__ import annotations
